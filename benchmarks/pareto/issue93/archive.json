@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "archive_sha256": "6eec3e3fc3229fc4455287518b84708e74f1200b551b116cbb5ac691918221b3",
+  "original_manifest_sha256": "aba154d4edd7c45036cbb68edf3723345ecf004d71c8d4b07fd5e9ae360ea429",
+  "artifacts": {
+    "aggregate.png": "84397b543e07e5468c8e1c2ea62f336e9271c9bf45d90cee2493dbe1732953f6",
+    "classifications.csv": "fe78a59f1488545ae65c007c21269cff136e853061f157eb7ea48fe0c66f17a8",
+    "evidence.zip": "6eec3e3fc3229fc4455287518b84708e74f1200b551b116cbb5ac691918221b3",
+    "languages.png": "f1929d61ad8a763db9965e6c5f4af2d52dbf0f568e476b722a4a161bcfea4885",
+    "REPORT.md": "44325b2b4d17f40f5cffbfb66acb669807ba97c97d2483ddbab3ee616cd599b2"
+  }
+}
