@@ -95,6 +95,8 @@ def export_binary(tokenizer: CustomTokenizer, output_path: Union[str, Path]) -> 
             "preset": pre_tok.preset,
         },
     }
+    if isinstance(getattr(tokenizer, "_merge_engine_arg", None), str):
+        config["merge_engine"] = tokenizer._merge_engine_arg
     config_bytes = json.dumps(config, ensure_ascii=False).encode("utf-8")
     # Compute section offsets
     scores_offset = HEADER_SIZE
@@ -149,7 +151,11 @@ def export_binary(tokenizer: CustomTokenizer, output_path: Union[str, Path]) -> 
         raise
 
 
-def load_binary(file_path: Union[str, Path], use_mmap: bool = True) -> CustomTokenizer:
+def load_binary(
+    file_path: Union[str, Path],
+    use_mmap: bool = True,
+    merge_engine: Optional[Union[str, Any]] = None,
+) -> CustomTokenizer:
     """Loads a CustomTokenizer from binary format (.uniqtok) using zero-copy mmap."""
     from uniqtoken.pre_tokenizer import Normalizer, RegexPreTokenizer
     from uniqtoken.tokenizer import CustomTokenizer
@@ -321,10 +327,12 @@ def load_binary(file_path: Union[str, Path], use_mmap: bool = True) -> CustomTok
                 digit_chunking=pre_cfg.get("digit_chunking", "greedy"),
                 preset=pre_cfg.get("preset"),
             )
+            resolved_engine = merge_engine if merge_engine is not None else config.get("merge_engine", None)
             tokenizer = CustomTokenizer(
                 model=model,
                 normalizer=normalizer,
                 pre_tokenizer=pre_tokenizer,
+                merge_engine=resolved_engine,
             )
             tokenizer.chat_template = config.get("chat_template", None)
             return tokenizer
