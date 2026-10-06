@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "issue": 100,
+  "status": "complete",
+  "artifacts": {
+    "results.json": "4caf9235cba466dd40227ad49f19ed374be40f602fa64dff2993b3f8235c5668",
+    "REPORT.md": "3bd4ac8d65078674d641dde547476bcb8a05666698a3ff6cd2a2ab454c55e4ee"
+  }
+}
