@@ -8,7 +8,8 @@ Validates:
 3. Negative control contrast (fallback_weight=5).
 4. Evaluation gates 1-5 (exact accounting, BpT retention >= 99%, fallback ratio <= 1.0,
    p95 span ratio <= 1.0, fragmentation increase <= 0.5 pp, aggregate reduction >= 10%).
-5. Strict gate tripping and rejection enforcement on any violation.
+5. Strict gate tripping and rejection enforcement on any violation, including missing
+   counts or undefined strata which must block certification per protocol rules.
 6. Adoption prerequisites (independent English and code validation coverage).
 """
 
@@ -17,18 +18,18 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 import unittest
 
 from benchmarks import byte_fallback_analysis as b
-from benchmarks import run_research_experiments as h
 from tests.test_byte_fallback_analysis import byte_model
 from uniqtoken.byte_codec import ByteFallbackEngine as Bytes
-from uniqtoken.tokenizer import CustomTokenizer
 from uniqtoken.pre_tokenizer import Normalizer, RegexPreTokenizer
+from uniqtoken.tokenizer import CustomTokenizer
 
 
 def load_candidate_protocol() -> Dict[str, Any]:
+    """Load the machine-readable SuperBPE v2 candidate protocol specification JSON."""
     protocol_path = Path(__file__).resolve().parents[1] / "benchmarks" / "protocols" / "superbpe_v2_candidate_v1.json"
     with open(protocol_path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -39,6 +40,12 @@ def evaluate_v2_candidate_gates(
     protocol: Dict[str, Any],
 ) -> Tuple[bool, Dict[str, Any]]:
     """Evaluate candidate vs baseline across budgets and strata against protocol gates.
+
+    Enforces strict protocol integrity rules:
+    - Missing counts block certification rather than passing through defaults.
+    - Zero runs in fragmentation categories produce an explicit not-applicable record.
+    - Aggregate reductions are computed over shared strata only.
+    - Any gate failure or missing required metric causes immediate rejection.
 
     Returns (passed, audit_report). If any gate fails on any budget or required stratum,
     passed is False and audit_report records the specific failure reason.
@@ -71,22 +78,30 @@ def evaluate_v2_candidate_gates(
         }
 
         # Gate 1: Exact accounting and integrity
-        cand_model_info = data.get("candidate_model_info", {})
+        cand_model_info = data.get("candidate_model_info")
+        if not isinstance(cand_model_info, dict):
+            b_report["gate1_passed"] = False
+            report["violations"].append(f"Budget {budget}: blocked, missing candidate_model_info")
+            continue
+
         actual_vocab = cand_model_info.get("actual_vocab_size")
         if actual_vocab != budget:
             b_report["gate1_passed"] = False
             report["violations"].append(f"Budget {budget}: vocab size {actual_vocab} != budget {budget}")
 
-        if cand_model_info.get("incomplete_prefix_additions", 0) != 0:
+        if "incomplete_prefix_additions" not in cand_model_info:
+            b_report["gate1_passed"] = False
+            report["violations"].append(f"Budget {budget}: blocked, missing incomplete_prefix_additions count")
+        elif cand_model_info["incomplete_prefix_additions"] != 0:
             b_report["gate1_passed"] = False
             report["violations"].append(f"Budget {budget}: incomplete prefix additions detected")
 
-        if not cand_model_info.get("probabilities_finite", True):
+        if cand_model_info.get("probabilities_finite") is not True:
             b_report["gate1_passed"] = False
-            report["violations"].append(f"Budget {budget}: non-finite probabilities detected")
+            report["violations"].append(f"Budget {budget}: non-finite or missing probability verification")
 
-        baseline_strata = data.get("baseline_strata", {})
-        cand_strata = data.get("candidate_strata", {})
+        baseline_strata = data.get("baseline_strata")
+        cand_strata = data.get("candidate_strata")
 
         if not baseline_strata or not cand_strata:
             report["violations"].append(f"Budget {budget}: missing baseline or candidate strata data")
@@ -101,9 +116,28 @@ def evaluate_v2_candidate_gates(
             cand_s = cand_strata[stratum_name]
             stratum_report: Dict[str, Any] = {}
 
+            # Strict key presence validation per protocol blocked_not_passed rule
+            required_stratum_keys = (
+                "bytes_per_token",
+                "normalized_utf8_bytes",
+                "fallback_source_bytes",
+                "p95_fallback_span",
+                "fragmentation",
+            )
+            missing_base = [k for k in required_stratum_keys if k not in base_s]
+            missing_cand = [k for k in required_stratum_keys if k not in cand_s]
+            if missing_base or missing_cand:
+                b_report["gate2_passed"] = False
+                b_report["gate3_passed"] = False
+                report["violations"].append(
+                    f"Budget {budget}, stratum {stratum_name}: blocked, missing required count(s) "
+                    f"(baseline: {missing_base}, candidate: {missing_cand})"
+                )
+                continue
+
             # Gate 2: BpT retention
-            base_bpt = base_s.get("bytes_per_token")
-            cand_bpt = cand_s.get("bytes_per_token")
+            base_bpt = base_s["bytes_per_token"]
+            cand_bpt = cand_s["bytes_per_token"]
             if (
                 base_bpt is None
                 or cand_bpt is None
@@ -124,10 +158,10 @@ def evaluate_v2_candidate_gates(
                     )
 
             # Gate 3: Fallback source-byte ratio & p95 span ratio
-            base_bytes = base_s.get("normalized_utf8_bytes", 0)
-            cand_bytes = cand_s.get("normalized_utf8_bytes", 0)
-            base_fb = base_s.get("fallback_source_bytes", 0)
-            cand_fb = cand_s.get("fallback_source_bytes", 0)
+            base_bytes = base_s["normalized_utf8_bytes"]
+            cand_bytes = cand_s["normalized_utf8_bytes"]
+            base_fb = base_s["fallback_source_bytes"]
+            cand_fb = cand_s["fallback_source_bytes"]
 
             if base_bytes <= 0 or cand_bytes <= 0:
                 b_report["gate3_passed"] = False
@@ -151,8 +185,8 @@ def evaluate_v2_candidate_gates(
                         )
 
             # Gate 3: p95 span ratio
-            base_p95 = base_s.get("p95_fallback_span")
-            cand_p95 = cand_s.get("p95_fallback_span")
+            base_p95 = base_s["p95_fallback_span"]
+            cand_p95 = cand_s["p95_fallback_span"]
             if base_p95 is None:
                 # Empty span histogram (known absence of fallback)
                 if cand_p95 is not None:
@@ -180,22 +214,47 @@ def evaluate_v2_candidate_gates(
                         )
 
             # Gate 4: Fragmentation split runs
-            base_runs = base_s.get("fragmentation", {})
-            cand_runs = cand_s.get("fragmentation", {})
+            base_runs = base_s["fragmentation"]
+            cand_runs = cand_s["fragmentation"]
             for cat in ("whitespace", "punctuation"):
-                base_cat = base_runs.get(cat)
-                cand_cat = cand_runs.get(cat)
-                if base_cat is None or cand_cat is None:
+                if cat not in base_runs or cat not in cand_runs:
+                    b_report["gate4_passed"] = False
+                    report["violations"].append(
+                        f"Budget {budget}, stratum {stratum_name}: blocked, missing {cat} fragmentation data"
+                    )
                     continue
-                b_total = base_cat.get("runs", 0)
-                c_total = cand_cat.get("runs", 0)
-                if b_total == 0:
-                    # zero runs: null proxy, not applicable
+
+                base_cat = base_runs[cat]
+                cand_cat = cand_runs[cat]
+                if (
+                    "runs" not in base_cat
+                    or "runs" not in cand_cat
+                    or "split_runs" not in base_cat
+                    or "split_runs" not in cand_cat
+                ):
+                    b_report["gate4_passed"] = False
+                    report["violations"].append(
+                        f"Budget {budget}, stratum {stratum_name}: blocked, missing {cat} run counts"
+                    )
                     continue
-                if c_total == 0:
+
+                b_total = base_cat["runs"]
+                c_total = cand_cat["runs"]
+
+                if b_total == 0 or c_total == 0:
+                    # Protocol: zero runs gives null and an explicitly not-applicable category with run counts;
+                    # missing counts block certification; never replace null with zero.
+                    stratum_report[f"frag_{cat}"] = {
+                        "status": "not_applicable",
+                        "baseline_runs": b_total,
+                        "candidate_runs": c_total,
+                        "baseline_split_runs": base_cat["split_runs"],
+                        "candidate_split_runs": cand_cat["split_runs"],
+                    }
                     continue
-                b_pct = 100.0 * base_cat.get("split_runs", 0) / b_total
-                c_pct = 100.0 * cand_cat.get("split_runs", 0) / c_total
+
+                b_pct = 100.0 * base_cat["split_runs"] / b_total
+                c_pct = 100.0 * cand_cat["split_runs"] / c_total
                 delta_pp = c_pct - b_pct
                 stratum_report[f"frag_delta_{cat}"] = delta_pp
                 if delta_pp > max_frag_increase_pp:
@@ -206,20 +265,33 @@ def evaluate_v2_candidate_gates(
 
             b_report["strata"][stratum_name] = stratum_report
 
-        # Gate 5: Aggregate relative fallback source-byte reduction
-        base_agg_fb = sum(s.get("fallback_source_bytes", 0) for s in baseline_strata.values())
-        base_agg_bytes = sum(s.get("normalized_utf8_bytes", 0) for s in baseline_strata.values())
-        cand_agg_fb = sum(s.get("fallback_source_bytes", 0) for s in cand_strata.values())
-        cand_agg_bytes = sum(s.get("normalized_utf8_bytes", 0) for s in cand_strata.values())
+        # Gate 5: Aggregate fallback source-byte reduction over shared strata only
+        shared = sorted(set(baseline_strata.keys()) & set(cand_strata.keys()))
+        base_agg_fb = sum(
+            baseline_strata[s]["fallback_source_bytes"] for s in shared if "fallback_source_bytes" in baseline_strata[s]
+        )
+        base_agg_bytes = sum(
+            baseline_strata[s]["normalized_utf8_bytes"] for s in shared if "normalized_utf8_bytes" in baseline_strata[s]
+        )
+        cand_agg_fb = sum(
+            cand_strata[s]["fallback_source_bytes"] for s in shared if "fallback_source_bytes" in cand_strata[s]
+        )
+        cand_agg_bytes = sum(
+            cand_strata[s]["normalized_utf8_bytes"] for s in shared if "normalized_utf8_bytes" in cand_strata[s]
+        )
 
-        if base_agg_bytes > 0 and cand_agg_bytes > 0 and base_agg_fb > 0:
-            base_agg_frac = base_agg_fb / base_agg_bytes
-            cand_agg_frac = cand_agg_fb / cand_agg_bytes
-            reduction = 1.0 - (cand_agg_frac / base_agg_frac)
-            b_report["aggregate_reduction"] = reduction
-            if reduction >= min_agg_reduction:
-                b_report["aggregate_passed"] = True
-                budgets_meeting_reduction += 1
+        if base_agg_bytes > 0 and cand_agg_bytes > 0:
+            if base_agg_fb == 0:
+                # Baseline had zero fallback: relative reduction cannot be computed
+                b_report["aggregate_reduction"] = 0.0
+            else:
+                base_agg_frac = base_agg_fb / base_agg_bytes
+                cand_agg_frac = cand_agg_fb / cand_agg_bytes
+                reduction = 1.0 - (cand_agg_frac / base_agg_frac)
+                b_report["aggregate_reduction"] = reduction
+                if reduction >= min_agg_reduction:
+                    b_report["aggregate_passed"] = True
+                    budgets_meeting_reduction += 1
 
         report["budgets"][budget] = b_report
 
@@ -239,9 +311,11 @@ class SuperBPEv2ProtocolIntegrityTests(unittest.TestCase):
     """Test suite for benchmarks/protocols/superbpe_v2_candidate_v1.json integrity."""
 
     def setUp(self) -> None:
+        """Load candidate protocol definition before running each test."""
         self.protocol = load_candidate_protocol()
 
     def test_protocol_metadata_and_schema(self) -> None:
+        """Verify protocol schema version, frozen manifest hash, and research integrity flags."""
         self.assertEqual(self.protocol["schema_version"], 1)
         self.assertEqual(
             self.protocol["status"],
@@ -276,6 +350,7 @@ class SuperBPEv2ProtocolIntegrityTests(unittest.TestCase):
         self.assertEqual(self.protocol["downstream_claim"], "none")
 
     def test_candidate_hyperparameters_and_cohort(self) -> None:
+        """Verify candidate reserve, atomic limit, negative control weight, and cohort members."""
         candidate_cfg = self.protocol["candidate"]
         self.assertEqual(candidate_cfg["reserve"], 64)
         self.assertEqual(candidate_cfg["atomic_limit"], 16)
@@ -296,6 +371,7 @@ class SuperBPEv2ProtocolIntegrityTests(unittest.TestCase):
         )
 
     def test_candidate_proposal_documentation_consistency(self) -> None:
+        """Verify docs/SUPERBPE_V2_CANDIDATE.md matches the machine-readable protocol specification."""
         doc_path = Path(__file__).resolve().parents[1] / "docs" / "SUPERBPE_V2_CANDIDATE.md"
         self.assertTrue(doc_path.exists())
         content = doc_path.read_text(encoding="utf-8")
@@ -309,7 +385,7 @@ class SuperBPEv2ProtocolIntegrityTests(unittest.TestCase):
             content,
         )
         self.assertIn("Admit at most 16 candidates", content)
-        self.assertIn("forbidden_not_opened", self.protocol["test_access"])
+        self.assertIn("held-out test set", content)
 
 
 class CandidateObjectiveFormulaTests(unittest.TestCase):
@@ -318,6 +394,7 @@ class CandidateObjectiveFormulaTests(unittest.TestCase):
     def test_candidate_objective_calculation_matches_unweighted_recovery(
         self,
     ) -> None:
+        """Verify unweighted candidate recovery computes exact J_A(c) score."""
         model = byte_model()
         chunks = ["\u00e9\u093e\U0001f600"] * 5
         candidates = b.recovery_candidates(model, chunks, fallback_weight=0.0)
@@ -336,6 +413,7 @@ class CandidateObjectiveFormulaTests(unittest.TestCase):
             self.assertEqual(row["utf8_bytes"], len(utf8_bytes))
 
     def test_negative_control_fallback_weight_penalty(self) -> None:
+        """Verify that fallback_weight=5 applies an explicit penalty as a negative control."""
         model = byte_model()
         chunks = ["\u00e9\u093e\U0001f600"] * 5
         plain = {r["token"]: r for r in b.recovery_candidates(model, chunks, fallback_weight=0.0)}
@@ -347,6 +425,7 @@ class CandidateObjectiveFormulaTests(unittest.TestCase):
             self.assertAlmostEqual(w_row["score"], plain_row["score"] - penalty)
 
     def test_candidate_filtering_and_admission_rules(self) -> None:
+        """Verify candidate admission enforces frequency >= 2 and multi-byte UTF-8 scalars."""
         model = byte_model()
         # Singletons (frequency=1) must not be admitted
         singletons = ["\u00e9", "\u093e", "\U0001f600"]
@@ -364,20 +443,16 @@ class CandidateObjectiveFormulaTests(unittest.TestCase):
             self.assertGreaterEqual(c["utf8_bytes"], 2)
 
     def test_tie_breaking_order(self) -> None:
-        # Tie-break rule: ascending score, then descending frequency, then scalar text
-        rows = [
-            {"score": 10.0, "frequency": 5, "token": "b"},
-            {"score": 10.0, "frequency": 8, "token": "a"},
-            {"score": 10.0, "frequency": 5, "token": "a"},
-            {"score": 5.0, "frequency": 2, "token": "z"},
-        ]
-        sorted_rows = sorted(rows, key=lambda r: (r["score"], -r["frequency"], r["token"]))
-        self.assertEqual(
-            [r["token"] for r in sorted_rows],
-            ["z", "a", "a", "b"],
-        )
+        """Verify production recovery_candidates breaks ties by descending frequency, then scalar text."""
+        # Equal frequency and equal byte log-probs give equal scores; order falls to scalar text.
+        chars = [chr(0x0918 - i) for i in range(5)]
+        rows = b.recovery_candidates(byte_model(), chars * 2, fallback_weight=0.0)
+        self.assertEqual([r["token"] for r in rows], sorted(chars))
+        keys = [(r["score"], -r["frequency"], r["token"]) for r in rows]
+        self.assertEqual(keys, sorted(keys))
 
     def test_atomic_limit_cap_and_id_accounting(self) -> None:
+        """Verify that at most 16 candidates are admitted and IDs are appended sequentially."""
         model = byte_model()
         initial_vocab_size = len(model.vocab)
         # Create 20 distinct multi-byte characters repeated twice
@@ -400,6 +475,7 @@ class CandidateObjectiveFormulaTests(unittest.TestCase):
         self.assertTrue(all(lp <= 0.0 for lp in updated.vocab.values()))
 
     def test_roundtrip_and_reload_parity(self) -> None:
+        """Verify CustomTokenizer preserves roundtrip decode parity with admitted scalar entries."""
         model, _ = b.recover_characters(byte_model(), ["\u00e9\u093e\U0001f600"] * 3, limit=16)
         tokenizer = CustomTokenizer(Normalizer(), RegexPreTokenizer(), model)
         test_text = "test \u00e9 \u093e \U0001f600 text"
@@ -412,9 +488,11 @@ class CandidateGateEvaluationTests(unittest.TestCase):
     """Test suite for candidate gate evaluations (Gates 1 - 5) and rejection tripping."""
 
     def setUp(self) -> None:
+        """Load candidate protocol definition before running each test."""
         self.protocol = load_candidate_protocol()
 
     def _create_passing_fixture(self) -> Dict[int, Dict[str, Any]]:
+        """Construct a complete, passing synthetic benchmark evaluation fixture across all 5 budgets."""
         fixture: Dict[int, Dict[str, Any]] = {}
         for budget in (8192, 16384, 32768, 65536, 131072):
             fixture[budget] = {
@@ -474,6 +552,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         return fixture
 
     def test_passing_evaluations_meet_all_gates(self) -> None:
+        """Verify that a compliant candidate meeting all criteria passes all evaluation gates."""
         fixture = self._create_passing_fixture()
         passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
         self.assertTrue(passed, f"Violations: {report['violations']}")
@@ -481,6 +560,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertGreaterEqual(report["budgets_with_sufficient_reduction"], 2)
 
     def test_gate1_violation_trips_rejection_on_vocab_size_mismatch(self) -> None:
+        """Verify that any vocabulary size mismatch against target budget rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Alter actual_vocab_size for 8192 to 8191
         fixture[8192]["candidate_model_info"]["actual_vocab_size"] = 8191
@@ -489,13 +569,23 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertTrue(any("vocab size 8191" in v for v in report["violations"]))
 
     def test_gate1_violation_trips_rejection_on_incomplete_prefixes(self) -> None:
+        """Verify that admitting incomplete UTF-8 prefixes strictly rejects the candidate."""
         fixture = self._create_passing_fixture()
         fixture[8192]["candidate_model_info"]["incomplete_prefix_additions"] = 1
         passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
         self.assertFalse(passed)
         self.assertTrue(any("incomplete prefix additions" in v for v in report["violations"]))
 
+    def test_gate1_violation_trips_on_missing_probabilities_finite(self) -> None:
+        """Verify that omitting probabilities_finite verification blocks Gate 1 per protocol rules."""
+        fixture = self._create_passing_fixture()
+        del fixture[8192]["candidate_model_info"]["probabilities_finite"]
+        passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
+        self.assertFalse(passed)
+        self.assertTrue(any("probability verification" in v for v in report["violations"]))
+
     def test_gate2_violation_trips_rejection_on_bpt_loss(self) -> None:
+        """Verify that exceeding the 1% BpT regression threshold strictly rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Lower BpT below 99% retention: 1.95 / 2.0 = 0.975 < 0.99
         fixture[8192]["candidate_strata"]["hi"]["bytes_per_token"] = 1.95
@@ -504,6 +594,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertTrue(any("BpT ratio" in v for v in report["violations"]))
 
     def test_gate2_violation_trips_rejection_on_missing_stratum(self) -> None:
+        """Verify that omitting a required stratum blocks certification rather than passing."""
         fixture = self._create_passing_fixture()
         del fixture[8192]["candidate_strata"]["hi"]
         passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
@@ -511,6 +602,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertTrue(any("missing in candidate" in v for v in report["violations"]))
 
     def test_gate3_violation_trips_rejection_on_fallback_increase(self) -> None:
+        """Verify that increasing fallback bytes per source byte strictly rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Candidate fallback higher than baseline
         fixture[8192]["candidate_strata"]["hi"]["fallback_source_bytes"] = 1100  # 1100/1000 = 1.1 > 1.0
@@ -521,6 +613,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
     def test_gate3_violation_trips_rejection_on_zero_fallback_baseline_violation(
         self,
     ) -> None:
+        """Verify that zero baseline fallback requires zero candidate fallback."""
         fixture = self._create_passing_fixture()
         # Baseline has zero fallback, candidate has non-zero
         fixture[8192]["baseline_strata"]["hi"]["fallback_source_bytes"] = 0
@@ -530,6 +623,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertTrue(any("baseline has 0 fallback" in v for v in report["violations"]))
 
     def test_gate3_violation_trips_rejection_on_p95_span_increase(self) -> None:
+        """Verify that increasing p95 fallback span strictly rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Candidate p95 span = 4, baseline = 3 (4 / 3 = 1.33 > 1.0)
         fixture[8192]["candidate_strata"]["hi"]["p95_fallback_span"] = 4
@@ -537,9 +631,26 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertTrue(any("p95 span ratio" in v for v in report["violations"]))
 
+    def test_gate3_violation_trips_on_missing_fallback_counts(self) -> None:
+        """Verify that missing fallback_source_bytes count blocks certification."""
+        fixture = self._create_passing_fixture()
+        del fixture[8192]["candidate_strata"]["hi"]["fallback_source_bytes"]
+        passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
+        self.assertFalse(passed)
+        self.assertTrue(any("missing required count" in v for v in report["violations"]))
+
+    def test_gate3_violation_trips_on_missing_p95_span_counts(self) -> None:
+        """Verify that missing p95_fallback_span count blocks certification."""
+        fixture = self._create_passing_fixture()
+        del fixture[8192]["candidate_strata"]["hi"]["p95_fallback_span"]
+        passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
+        self.assertFalse(passed)
+        self.assertTrue(any("missing required count" in v for v in report["violations"]))
+
     def test_gate4_violation_trips_rejection_on_fragmentation_increase(
         self,
     ) -> None:
+        """Verify that fragmentation increase exceeding 0.5 pp strictly rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Increase split runs by 1.0 pp (from 10% to 11% with 100 runs)
         fixture[8192]["candidate_strata"]["hi"]["fragmentation"]["whitespace"]["split_runs"] = 11
@@ -547,9 +658,33 @@ class CandidateGateEvaluationTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertTrue(any("fragmentation delta" in v for v in report["violations"]))
 
+    def test_gate4_violation_trips_on_missing_category_runs(self) -> None:
+        """Verify that omitting category run counts blocks certification."""
+        fixture = self._create_passing_fixture()
+        del fixture[8192]["candidate_strata"]["hi"]["fragmentation"]["whitespace"]["runs"]
+        passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
+        self.assertFalse(passed)
+        self.assertTrue(any("blocked, missing whitespace run counts" in v for v in report["violations"]))
+
+    def test_gate4_zero_runs_produces_explicit_not_applicable_record(
+        self,
+    ) -> None:
+        """Verify that zero runs produces an explicit not-applicable record rather than silent omission."""
+        fixture = self._create_passing_fixture()
+        fixture[8192]["candidate_strata"]["hi"]["fragmentation"]["whitespace"] = {
+            "runs": 0,
+            "split_runs": 0,
+        }
+        passed, report = evaluate_v2_candidate_gates(fixture, self.protocol)
+        # Should record explicit not_applicable entry
+        hi_frag = report["budgets"][8192]["strata"]["hi"]["frag_whitespace"]
+        self.assertEqual(hi_frag["status"], "not_applicable")
+        self.assertEqual(hi_frag["candidate_runs"], 0)
+
     def test_gate5_violation_trips_rejection_on_insufficient_budgets_with_reduction(
         self,
     ) -> None:
+        """Verify that failing to reach 10% aggregate reduction in at least 2 budgets rejects the candidate."""
         fixture = self._create_passing_fixture()
         # Set candidate fallback equal to baseline across 4 budgets (reduction = 0%)
         for budget in (8192, 16384, 32768, 65536):
@@ -568,6 +703,7 @@ class CandidateGateEvaluationTests(unittest.TestCase):
     def test_adoption_requires_independent_english_and_code_validation(
         self,
     ) -> None:
+        """Verify that independent validation of English and 10 programming languages is required."""
         required_independent = self.protocol["gates"]["required_independent_validation"]
         self.assertEqual(set(required_independent), {"english", "code"})
         required_langs = set(self.protocol["gates"]["required_independent_languages"])
