@@ -1,0 +1,540 @@
+{
+  "issue": 101,
+  "timestamp": "2026-10-06T06:20:48Z",
+  "topology": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "python_version": "3.13.1",
+    "physical_cores": 8,
+    "logical_cores": 12,
+    "total_ram_gb": 7.65
+  },
+  "microbenchmarks": {
+    "crossing_1": {
+      "baseline": {
+        "crossing": "crossing_1_string_utf8_access",
+        "description": "Baseline Python string traversal with per-char surrogate checks",
+        "call_count": 32,
+        "copied_bytes": 0,
+        "p50_latency_ms": 1.4946,
+        "p95_latency_ms": 1.51785,
+        "throughput_mb_s": 21.92,
+        "allocation_volume_bytes": 312,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 32,
+          "total_input_bytes": 32758
+        }
+      },
+      "optimized": {
+        "crossing": "crossing_1_string_utf8_access",
+        "description": "Optimized zero-copy borrowed access with isascii() fast check",
+        "call_count": 32,
+        "copied_bytes": 0,
+        "p50_latency_ms": 0.00085,
+        "p95_latency_ms": 0.00086,
+        "throughput_mb_s": 38313.45,
+        "allocation_volume_bytes": 312,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 32,
+          "total_input_bytes": 32758
+        }
+      }
+    },
+    "crossing_2": {
+      "ids_64": {
+        "crossing": "crossing_2_token_ids_to_containers",
+        "description": "Materialization of 64 token IDs into Python List[int]",
+        "call_count": 1,
+        "copied_bytes": 256,
+        "p50_latency_ms": 0.000128,
+        "p95_latency_ms": 0.000134,
+        "throughput_mb_s": 2000.0,
+        "allocation_volume_bytes": 2360,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 64
+        }
+      },
+      "ids_512": {
+        "crossing": "crossing_2_token_ids_to_containers",
+        "description": "Materialization of 512 token IDs into Python List[int]",
+        "call_count": 1,
+        "copied_bytes": 2048,
+        "p50_latency_ms": 0.000642,
+        "p95_latency_ms": 0.000656,
+        "throughput_mb_s": 3190.03,
+        "allocation_volume_bytes": 18488,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 512
+        }
+      },
+      "ids_4096": {
+        "crossing": "crossing_2_token_ids_to_containers",
+        "description": "Materialization of 4096 token IDs into Python List[int]",
+        "call_count": 1,
+        "copied_bytes": 16384,
+        "p50_latency_ms": 0.006676,
+        "p95_latency_ms": 0.008564,
+        "throughput_mb_s": 2454.16,
+        "allocation_volume_bytes": 147512,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 4096
+        }
+      }
+    },
+    "crossing_3": {
+      "batch_1": {
+        "crossing": "crossing_3_batch_output_construction",
+        "description": "Construct nested batch container List[List[int]] (N=1)",
+        "call_count": 1,
+        "copied_bytes": 128,
+        "p50_latency_ms": 0.00017,
+        "p95_latency_ms": 0.000187,
+        "throughput_mb_s": 752.94,
+        "allocation_volume_bytes": 624,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 1,
+          "total_tokens": 32
+        }
+      },
+      "batch_8": {
+        "crossing": "crossing_3_batch_output_construction",
+        "description": "Construct nested batch container List[List[int]] (N=8)",
+        "call_count": 8,
+        "copied_bytes": 1024,
+        "p50_latency_ms": 0.000737,
+        "p95_latency_ms": 0.000743,
+        "throughput_mb_s": 1390.05,
+        "allocation_volume_bytes": 4600,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 8,
+          "total_tokens": 256
+        }
+      },
+      "batch_32": {
+        "crossing": "crossing_3_batch_output_construction",
+        "description": "Construct nested batch container List[List[int]] (N=32)",
+        "call_count": 32,
+        "copied_bytes": 4096,
+        "p50_latency_ms": 0.0027,
+        "p95_latency_ms": 0.003013,
+        "throughput_mb_s": 1517.04,
+        "allocation_volume_bytes": 18232,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 32,
+          "total_tokens": 1024
+        }
+      },
+      "batch_128": {
+        "crossing": "crossing_3_batch_output_construction",
+        "description": "Construct nested batch container List[List[int]] (N=128)",
+        "call_count": 128,
+        "copied_bytes": 16384,
+        "p50_latency_ms": 0.01046,
+        "p95_latency_ms": 0.01073,
+        "throughput_mb_s": 1566.35,
+        "allocation_volume_bytes": 72760,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 128,
+          "total_tokens": 4096
+        }
+      }
+    },
+    "crossing_4": {
+      "ints": {
+        "crossing": "crossing_4_python_object_creation",
+        "description": "Creation of 1000 distinct PyLong objects (> 256)",
+        "call_count": 1000,
+        "copied_bytes": 4000,
+        "p50_latency_ms": 0.022807,
+        "p95_latency_ms": 0.036267,
+        "throughput_mb_s": 175.39,
+        "allocation_volume_bytes": 28056,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "object_type": "PyLong",
+          "count": 1000
+        }
+      },
+      "strings": {
+        "crossing": "crossing_4_python_object_creation",
+        "description": "Creation of 1000 PyUnicode string objects",
+        "call_count": 1000,
+        "copied_bytes": 8000,
+        "p50_latency_ms": 0.149483,
+        "p95_latency_ms": 0.181373,
+        "throughput_mb_s": 53.52,
+        "allocation_volume_bytes": 49056,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "object_type": "PyUnicode",
+          "count": 1000
+        }
+      }
+    },
+    "crossing_5": {
+      "baseline_precheck": {
+        "crossing": "crossing_5_repeated_ffi_crossings",
+        "description": "Baseline pre-FFI checks with unconditional NFKC normalize on batch",
+        "call_count": 32,
+        "copied_bytes": 0,
+        "p50_latency_ms": 1.53153,
+        "p95_latency_ms": 2.04716,
+        "throughput_mb_s": 21.39,
+        "allocation_volume_bytes": 131032,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "check_type": "baseline_nfkc",
+          "batch_size": 32
+        }
+      },
+      "optimized_precheck": {
+        "crossing": "crossing_5_repeated_ffi_crossings",
+        "description": "Optimized pre-FFI checks with NFKC less-than bypass on batch",
+        "call_count": 32,
+        "copied_bytes": 0,
+        "p50_latency_ms": 0.00375,
+        "p95_latency_ms": 0.00377,
+        "throughput_mb_s": 8735.47,
+        "allocation_volume_bytes": 0,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "check_type": "optimized_bypass",
+          "batch_size": 32
+        }
+      },
+      "iterative_crossing": {
+        "crossing": "crossing_5_repeated_ffi_crossings",
+        "description": "Iterative per-item crossings: N=32 separate FFI calls",
+        "call_count": 32,
+        "copied_bytes": 32758,
+        "p50_latency_ms": 21.73518,
+        "p95_latency_ms": 22.06518,
+        "throughput_mb_s": 1.51,
+        "allocation_volume_bytes": 624,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "call_count": 32,
+          "total_input_bytes": 32758
+        }
+      },
+      "batched_crossing": {
+        "crossing": "crossing_5_repeated_ffi_crossings",
+        "description": "Batched crossing: 1 fused FFI call for entire batch",
+        "call_count": 1,
+        "copied_bytes": 32758,
+        "p50_latency_ms": 21.27532,
+        "p95_latency_ms": 22.7345,
+        "throughput_mb_s": 1.54,
+        "allocation_volume_bytes": 312,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "call_count": 1,
+          "total_input_bytes": 32758
+        }
+      }
+    }
+  },
+  "stage_decompositions": [
+    {
+      "workload": "short_single",
+      "normalized_input_bytes": 44,
+      "total_latency_ms": 0.05719,
+      "input_conversion_ms": 0.00045,
+      "input_conversion_pct": 0.79,
+      "native_compute_ms": 0.05647,
+      "native_compute_pct": 98.74,
+      "materialization_ms": 0.00027,
+      "materialization_pct": 0.47,
+      "throughput_mb_s": 0.77
+    },
+    {
+      "workload": "short_batch",
+      "normalized_input_bytes": 1504,
+      "total_latency_ms": 1.64321,
+      "input_conversion_ms": 0.00274,
+      "input_conversion_pct": 0.17,
+      "native_compute_ms": 1.63822,
+      "native_compute_pct": 99.7,
+      "materialization_ms": 0.00225,
+      "materialization_pct": 0.14,
+      "throughput_mb_s": 0.92
+    },
+    {
+      "workload": "medium_single",
+      "normalized_input_bytes": 1020,
+      "total_latency_ms": 0.61913,
+      "input_conversion_ms": 0.00028,
+      "input_conversion_pct": 0.05,
+      "native_compute_ms": 0.61819,
+      "native_compute_pct": 99.85,
+      "materialization_ms": 0.00066,
+      "materialization_pct": 0.11,
+      "throughput_mb_s": 1.65
+    },
+    {
+      "workload": "medium_batch",
+      "normalized_input_bytes": 32736,
+      "total_latency_ms": 21.41448,
+      "input_conversion_ms": 0.00361,
+      "input_conversion_pct": 0.02,
+      "native_compute_ms": 21.40019,
+      "native_compute_pct": 99.93,
+      "materialization_ms": 0.01068,
+      "materialization_pct": 0.05,
+      "throughput_mb_s": 1.53
+    },
+    {
+      "workload": "long_single",
+      "normalized_input_bytes": 4730,
+      "total_latency_ms": 3.90327,
+      "input_conversion_ms": 0.00039,
+      "input_conversion_pct": 0.01,
+      "native_compute_ms": 3.90178,
+      "native_compute_pct": 99.96,
+      "materialization_ms": 0.0011,
+      "materialization_pct": 0.03,
+      "throughput_mb_s": 1.21
+    },
+    {
+      "workload": "long_batch",
+      "normalized_input_bytes": 151456,
+      "total_latency_ms": 112.80204,
+      "input_conversion_ms": 0.00635,
+      "input_conversion_pct": 0.01,
+      "native_compute_ms": 112.69712,
+      "native_compute_pct": 99.91,
+      "materialization_ms": 0.09857,
+      "materialization_pct": 0.09,
+      "throughput_mb_s": 1.34
+    },
+    {
+      "workload": "multilingual_single",
+      "normalized_input_bytes": 792,
+      "total_latency_ms": 10.68179,
+      "input_conversion_ms": 0.02594,
+      "input_conversion_pct": 0.24,
+      "native_compute_ms": 10.65538,
+      "native_compute_pct": 99.75,
+      "materialization_ms": 0.00047,
+      "materialization_pct": 0.0,
+      "throughput_mb_s": 0.07
+    },
+    {
+      "workload": "multilingual_batch",
+      "normalized_input_bytes": 25440,
+      "total_latency_ms": 356.86891,
+      "input_conversion_ms": 0.73369,
+      "input_conversion_pct": 0.21,
+      "native_compute_ms": 356.12665,
+      "native_compute_pct": 99.79,
+      "materialization_ms": 0.00857,
+      "materialization_pct": 0.0,
+      "throughput_mb_s": 0.07
+    },
+    {
+      "workload": "source_code_single",
+      "normalized_input_bytes": 1050,
+      "total_latency_ms": 0.99059,
+      "input_conversion_ms": 0.00029,
+      "input_conversion_pct": 0.03,
+      "native_compute_ms": 0.98874,
+      "native_compute_pct": 99.81,
+      "materialization_ms": 0.00156,
+      "materialization_pct": 0.16,
+      "throughput_mb_s": 1.06
+    },
+    {
+      "workload": "source_code_batch",
+      "normalized_input_bytes": 33696,
+      "total_latency_ms": 33.47863,
+      "input_conversion_ms": 0.00377,
+      "input_conversion_pct": 0.01,
+      "native_compute_ms": 33.39527,
+      "native_compute_pct": 99.75,
+      "materialization_ms": 0.07959,
+      "materialization_pct": 0.24,
+      "throughput_mb_s": 1.01
+    }
+  ],
+  "macrobenchmarks": [
+    {
+      "workload": "short_single",
+      "mode": "single",
+      "normalized_bytes": 44,
+      "before_p50_ms": 0.049,
+      "before_p95_ms": 0.0566,
+      "before_mb_s": 0.9,
+      "after_p50_ms": 0.0472,
+      "after_p95_ms": 0.0681,
+      "after_mb_s": 0.93,
+      "throughput_gain_pct": 3.99,
+      "ci_95_after_mb_s": [
+        0.74,
+        0.94
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "short_batch",
+      "mode": "batch",
+      "normalized_bytes": 1504,
+      "before_p50_ms": 1.7911,
+      "before_p95_ms": 2.1637,
+      "before_mb_s": 0.84,
+      "after_p50_ms": 1.601,
+      "after_p95_ms": 1.7196,
+      "after_mb_s": 0.94,
+      "throughput_gain_pct": 11.88,
+      "ci_95_after_mb_s": [
+        0.9,
+        0.96
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "medium_single",
+      "mode": "single",
+      "normalized_bytes": 1020,
+      "before_p50_ms": 0.801,
+      "before_p95_ms": 0.9454,
+      "before_mb_s": 1.27,
+      "after_p50_ms": 0.6366,
+      "after_p95_ms": 0.7036,
+      "after_mb_s": 1.6,
+      "throughput_gain_pct": 25.84,
+      "ci_95_after_mb_s": [
+        1.51,
+        1.64
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "medium_batch",
+      "mode": "batch",
+      "normalized_bytes": 32736,
+      "before_p50_ms": 23.2042,
+      "before_p95_ms": 26.6126,
+      "before_mb_s": 1.41,
+      "after_p50_ms": 21.9386,
+      "after_p95_ms": 25.009,
+      "after_mb_s": 1.49,
+      "throughput_gain_pct": 5.77,
+      "ci_95_after_mb_s": [
+        1.4,
+        1.53
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "long_single",
+      "mode": "single",
+      "normalized_bytes": 4730,
+      "before_p50_ms": 3.6472,
+      "before_p95_ms": 4.494,
+      "before_mb_s": 1.3,
+      "after_p50_ms": 3.3455,
+      "after_p95_ms": 5.0471,
+      "after_mb_s": 1.41,
+      "throughput_gain_pct": 9.02,
+      "ci_95_after_mb_s": [
+        1.15,
+        1.43
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "long_batch",
+      "mode": "batch",
+      "normalized_bytes": 151456,
+      "before_p50_ms": 218.527,
+      "before_p95_ms": 248.1367,
+      "before_mb_s": 0.69,
+      "after_p50_ms": 193.4307,
+      "after_p95_ms": 211.8659,
+      "after_mb_s": 0.78,
+      "throughput_gain_pct": 12.97,
+      "ci_95_after_mb_s": [
+        0.75,
+        0.82
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "multilingual_single",
+      "mode": "single",
+      "normalized_bytes": 792,
+      "before_p50_ms": 17.9365,
+      "before_p95_ms": 20.6966,
+      "before_mb_s": 0.04,
+      "after_p50_ms": 14.5212,
+      "after_p95_ms": 22.1452,
+      "after_mb_s": 0.05,
+      "throughput_gain_pct": 23.52,
+      "ci_95_after_mb_s": [
+        0.04,
+        0.06
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "multilingual_batch",
+      "mode": "batch",
+      "normalized_bytes": 25440,
+      "before_p50_ms": 580.1827,
+      "before_p95_ms": 718.2404,
+      "before_mb_s": 0.04,
+      "after_p50_ms": 554.2311,
+      "after_p95_ms": 564.3266,
+      "after_mb_s": 0.05,
+      "throughput_gain_pct": 4.68,
+      "ci_95_after_mb_s": [
+        0.05,
+        0.05
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "source_code_single",
+      "mode": "single",
+      "normalized_bytes": 1050,
+      "before_p50_ms": 2.0265,
+      "before_p95_ms": 2.1867,
+      "before_mb_s": 0.52,
+      "after_p50_ms": 1.5633,
+      "after_p95_ms": 2.2536,
+      "after_mb_s": 0.67,
+      "throughput_gain_pct": 29.63,
+      "ci_95_after_mb_s": [
+        0.56,
+        0.82
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "source_code_batch",
+      "mode": "batch",
+      "normalized_bytes": 33696,
+      "before_p50_ms": 58.7233,
+      "before_p95_ms": 63.0243,
+      "before_mb_s": 0.57,
+      "after_p50_ms": 52.6559,
+      "after_p95_ms": 57.8309,
+      "after_mb_s": 0.64,
+      "throughput_gain_pct": 11.52,
+      "ci_95_after_mb_s": [
+        0.61,
+        0.69
+      ],
+      "peak_rss_bytes": 0
+    }
+  ]
+}

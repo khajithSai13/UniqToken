@@ -187,12 +187,11 @@ class CustomTokenizer:
 
     @staticmethod
     def _requires_python_security(text: str) -> bool:
-        return (
-            not native_text_supported(text)
-            or "\ue000" in text
-            or "\ue001" in text
-            or "<|" in unicodedata.normalize("NFKC", text)
-        )
+        if not native_text_supported(text) or "\ue000" in text or "\ue001" in text:
+            return True
+        if ("<" in text or "\ufe64" in text or "\uff1c" in text) and ("|" in text or "\uff5c" in text):
+            return "<|" in unicodedata.normalize("NFKC", text)
+        return False
 
     def _cross_word_tokens(self) -> frozenset[str]:
         """Vocab tokens containing the space char (SuperBPE spanning tokens).
