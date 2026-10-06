@@ -578,9 +578,7 @@ def decompose_workload_stages(tokenizer, workload_name: str, texts: List[str]) -
         _ = [list(r) for r in sample_ids]
     t_mat_ms = ((time.perf_counter_ns() - t0) / 10) / 1e6
 
-    t_input_ms = min(t_input_ms, t_total_ms * 0.15)
-    t_mat_ms = min(t_mat_ms, t_total_ms * 0.25)
-    t_compute_ms = max(0.0001, t_total_ms - t_input_ms - t_mat_ms)
+    t_compute_ms = max(0.0, t_total_ms - t_input_ms - t_mat_ms)
 
     pct_input = round((t_input_ms / t_total_ms) * 100, 2)
     pct_comp = round((t_compute_ms / t_total_ms) * 100, 2)
