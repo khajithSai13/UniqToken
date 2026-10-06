@@ -64,14 +64,13 @@ tokenizer = CustomTokenizer.train_from_corpus(
 )
 
 text = "hello world"
-tokens = tokenizer.encode(text)       # List[str]: token strings
-ids = tokenizer.encode_to_ids(text)   # List[int]: model-specific IDs
+tokens = tokenizer.encode(text)  # List[str]: token strings
+ids = tokenizer.encode_to_ids(text)  # List[int]: model-specific IDs
 assert tokenizer.decode(ids) == text
 
 print(tokens)
 print(ids)
-print([(token.text, token.raw_span)
-       for token in tokenizer.encode_with_offsets(text)])
+print([(token.text, token.raw_span) for token in tokenizer.encode_with_offsets(text)])
 
 tokenizer.save("saved_model")
 restored = CustomTokenizer.load("saved_model")
@@ -113,11 +112,7 @@ from uniqtoken import BPETrainer, Normalizer, RegexPreTokenizer
 
 normalizer = Normalizer()
 pre_tokenizer = RegexPreTokenizer()
-chunks = [
-    chunk
-    for document in corpus
-    for chunk in pre_tokenizer.pre_tokenize(normalizer.normalize(document))
-]
+chunks = [chunk for document in corpus for chunk in pre_tokenizer.pre_tokenize(normalizer.normalize(document))]
 bpe = BPETrainer(target_vocab_size=320, byte_fallback=True).train(chunks)
 bpe_ids = bpe.encode_to_ids(normalizer.normalize(text))
 assert bpe.decode(bpe_ids) == text
