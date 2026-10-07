@@ -1,97 +1,58 @@
-# Empirical Investigation: Python-Rust Boundary & FFI Overhead (#101)
+# Python guard optimization and boundary diagnostics (#101)
 
-## 1. Executive Summary & Evidence from #95
+## Scope and method
 
-This empirical study profiles residual Python/Rust boundary and FFI overhead in UniqToken as mandated by Issue #101.
+This is a synthetic engineering diagnostic, not an isolated FFI-stage profile. The baseline restores the
+two pre-PR Python checks inside the public API. Both variants use the same model, native binary, inputs,
+and configuration; no extra precheck is added outside encode. Paired trials alternate execution order.
+Memory is measured separately with tracemalloc and covers only the Python traced heap, not Rust allocations.
 
-- **Evidence from #95**: Issue #95 demonstrated that materialization and boundary operations represent a meaningful time fraction (e.g. output copying took 1.35 ms on source code and 2.31 ms on long batches), but noted that the FFI boundary, allocation, and copying overlap and were treated as an opaque native call in Python call-stacks.
-- **Coordination with #96 / #99**: Issue #96 and #99 (PR #131) bounded internal Viterbi scratch allocations and eliminated temporary owned prefix vectors. This report isolates the residual PyO3/boundary operations without attributing internal Rust lattice memory to PyO3.
-- **Preservation of Guarantees**: Public API signatures and return types are strictly preserved (`List[List[int]]`, `List[List[str]]`). Safe zero-copy buffer borrowing across Rayon threads (`PyBackedStr`) is retained.
+- Source commit: `a7594049934093d6b28ac3ff66dac26281f69b8a`; clean tracked tree: `True`.
+- Platform: `Windows-10-10.0.26300-SP0`; Python `3.10.11`; Unicode `13.0.0`.
+- Native SHA-256: `e56883b67e9bb085d6b9206d7c47cf98e239d483b2275282fefea2543f55d87e`; declared build mode: `release`.
+- Rayon threads: 1; warmup: 3; repetitions: 11;
+  calls per timed public-API trial: 5.
+- Fixtures: five embedded text workloads, each single and batch of 32; normalized UTF-8 decimal MB/s.
+- Intervals bootstrap the paired median ratios within one process; they do not establish cross-machine effects.
+- Reproduce with a fresh release extension and committed source:
+  `python -m benchmarks.profile_boundary_overhead --output <new-directory> --threads 1 --warmup 3 --repetitions 11 --build-mode release`.
 
-## 2. Hardware & Environment Topology
+## Public IDs API results
 
-- **Platform**: Windows-11-10.0.26200-SP0
-- **Processor**: Intel64 Family 6 Model 154 Stepping 3, GenuineIntel
-- **Python Version**: 3.13.1
-- **Physical / Logical Cores**: 8 physical / 12 logical
-- **System RAM**: 7.65 GB
+| Workload | Before MB/s | After MB/s | Before p50/p95 ms | After p50/p95 ms | Paired speed ratio [95% interval] |
+| --- | ---: | ---: | --- | --- | --- |
+| short_single | 0.523 | 0.789 | 0.1146/0.1591 | 0.0761/0.0926 | 1.407 [1.346, 1.620] |
+| short_batch | 0.968 | 1.311 | 2.1480/2.6287 | 1.5871/2.0354 | 1.260 [1.196, 1.422] |
+| medium_single | 0.464 | 0.500 | 2.7173/3.1584 | 2.5195/2.9306 | 1.087 [0.965, 1.146] |
+| medium_batch | 0.546 | 0.622 | 74.1508/74.5916 | 65.1000/65.8132 | 1.143 [1.104, 1.179] |
+| long_single | 0.810 | 0.990 | 7.3303/7.5950 | 5.9979/6.1484 | 1.223 [1.204, 1.252] |
+| long_batch | 0.815 | 0.995 | 233.4552/242.8840 | 191.1192/198.4361 | 1.239 [1.197, 1.266] |
+| multilingual_single | 0.465 | 0.447 | 2.0373/2.7070 | 2.1186/2.8106 | 1.043 [0.799, 1.193] |
+| multilingual_batch | 0.375 | 0.384 | 81.2683/85.7588 | 79.4156/80.6502 | 1.027 [0.993, 1.047] |
+| source_code_single | 0.377 | 0.398 | 3.4707/3.7893 | 3.2885/6.0839 | 1.107 [1.064, 1.138] |
+| source_code_batch | 0.407 | 0.445 | 103.2961/105.8729 | 94.6077/97.0237 | 1.097 [1.076, 1.132] |
 
-## 3. Boundary Stage Decomposition
+Ratios above 1 favor the optimized checks. All cells are reported, including regressions and uncertain
+intervals. These comparisons change both checks together; they do not attribute gains to either check alone.
 
-Decomposition of execution time into Input Conversion ($T_{\text{input}}$), Native Computation ($T_{\text{native}}$), and Result Materialization ($T_{\text{mat}}$):
+## Boundary diagnostics and parity
 
-| Workload | Input Bytes | Total (ms) | Input Conv (ms) | Input % | Native Comp (ms) | Native % | Materialization (ms) | Mat % | Throughput (MB/s) |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `short_single` | 44 | 0.0572 | 0.0004 | 0.8% | 0.0565 | 98.7% | 0.0003 | 0.5% | 0.77 |
-| `short_batch` | 1,504 | 1.6432 | 0.0027 | 0.2% | 1.6382 | 99.7% | 0.0022 | 0.1% | 0.92 |
-| `medium_single` | 1,020 | 0.6191 | 0.0003 | 0.1% | 0.6182 | 99.8% | 0.0007 | 0.1% | 1.65 |
-| `medium_batch` | 32,736 | 21.4145 | 0.0036 | 0.0% | 21.4002 | 99.9% | 0.0107 | 0.1% | 1.53 |
-| `long_single` | 4,730 | 3.9033 | 0.0004 | 0.0% | 3.9018 | 100.0% | 0.0011 | 0.0% | 1.21 |
-| `long_batch` | 151,456 | 112.8020 | 0.0063 | 0.0% | 112.6971 | 99.9% | 0.0986 | 0.1% | 1.34 |
-| `multilingual_single` | 792 | 10.6818 | 0.0259 | 0.2% | 10.6554 | 99.8% | 0.0005 | 0.0% | 0.07 |
-| `multilingual_batch` | 25,440 | 356.8689 | 0.7337 | 0.2% | 356.1266 | 99.8% | 0.0086 | 0.0% | 0.07 |
-| `source_code_single` | 1,050 | 0.9906 | 0.0003 | 0.0% | 0.9887 | 99.8% | 0.0016 | 0.2% | 1.06 |
-| `source_code_batch` | 33,696 | 33.4786 | 0.0038 | 0.0% | 33.3953 | 99.8% | 0.0796 | 0.2% | 1.01 |
+The first four probe groups are Python-only operations: surrogate scanning, shallow copies of existing
+integer references, nested-list creation, and Python object creation. They do not time Rust UTF-8 borrowing
+or u32-to-Python conversion. Copied native bytes and Rust allocation volume remain unmeasured.
 
-## 4. Targeted Boundary Crossings (Microbenchmarks)
+The fifth group verifies 32 actual single native IDs calls versus one fused native batch IDs call, then
+times those public operations without instrumentation. Their output IDs must match exactly.
 
-### Crossing 1: Python String to Rust UTF-8 Access (Input Conversion)
+Baseline/optimized parity passed for 29 cases covering tokens, IDs, raw offsets, batch
+outputs, decode, invalid IDs, compatibility markers, private-use escapes, surrogates, and security policies.
+Ordinary fixture spans are also checked against an independent normalized-text alignment oracle.
 
-| Variant | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Copied Bytes | Memory (RSS) |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| Baseline (character scan) | 1.49460 | 1.51785 | 21.92 | 0 B | 0 B |
-| Optimized (`isascii()` fast-path) | 0.00085 | 0.00086 | 38313.45 | 0 B | 0 B |
+Independent public-batch and Python-check timings are diagnostic operations, not additive stages.
+Native compute and materialization fields are null because they have not been isolated.
 
-### Crossing 2: Rust Token IDs to Python Containers (Result Materialization)
+## Remaining work
 
-| Token Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Copied Bytes | Alloc Volume |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 64 tokens | 0.000128 | 0.000134 | 2000.00 | 256 B | 2,360 B |
-| 512 tokens | 0.000642 | 0.000656 | 3190.03 | 2,048 B | 18,488 B |
-| 4096 tokens | 0.006676 | 0.008564 | 2454.16 | 16,384 B | 147,512 B |
-
-### Crossing 3: Batch Output Construction (Nested Containers)
-
-| Batch Size | Total Tokens | Latency p50 (ms) | Latency p95 (ms) | Container Alloc Bytes | Memory (RSS) |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| N=1 | 32 | 0.000170 | 0.000187 | 624 B | 0 B |
-| N=8 | 256 | 0.000737 | 0.000743 | 4,600 B | 0 B |
-| N=32 | 1024 | 0.002700 | 0.003013 | 18,232 B | 0 B |
-| N=128 | 4096 | 0.010460 | 0.010730 | 72,760 B | 0 B |
-
-### Crossing 4: Python Object Creation & Reference Overhead
-
-| Object Type | Item Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Alloc Volume |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| `PyLong` (> 256) | 1000 | 0.022807 | 0.036267 | 175.39 | 28,056 B |
-| `PyUnicode` | 1000 | 0.149483 | 0.181373 | 53.52 | 49,056 B |
-
-### Crossing 5: Repeated FFI Crossings Across Encode/Decode Variants
-
-| Crossing Variant | Call Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) |
-| :--- | ---: | ---: | ---: | ---: |
-| Baseline pre-check (unconditional NFKC) | 32 | 1.53153 | 2.04716 | 21.39 |
-| Optimized pre-check (`<` / `|` bypass) | 32 | 0.00375 | 0.00377 | 8735.47 |
-| Iterative crossings (Python loop of N calls) | 32 | 21.73518 | 22.06518 | 1.51 |
-| Batched crossing (1 fused native call) | 1 | 21.27532 | 22.73450 | 1.54 |
-
-## 5. End-to-End Before vs After Performance Matrix
-
-| Workload | Input Bytes | Before p50 (ms) | Before MB/s | After p50 (ms) | After MB/s | 95% CI (MB/s) | Speedup % |
-| :--- | ---: | ---: | ---: | ---: | ---: | :---: | ---: |
-| `short_single` | 44 | 0.0490 | 0.90 | 0.0472 | 0.93 | [0.74, 0.94] | +4.0% |
-| `short_batch` | 1,504 | 1.7911 | 0.84 | 1.6010 | 0.94 | [0.90, 0.96] | +11.9% |
-| `medium_single` | 1,020 | 0.8010 | 1.27 | 0.6366 | 1.60 | [1.51, 1.64] | +25.8% |
-| `medium_batch` | 32,736 | 23.2042 | 1.41 | 21.9386 | 1.49 | [1.40, 1.53] | +5.8% |
-| `long_single` | 4,730 | 3.6472 | 1.30 | 3.3455 | 1.41 | [1.15, 1.43] | +9.0% |
-| `long_batch` | 151,456 | 218.5270 | 0.69 | 193.4307 | 0.78 | [0.75, 0.82] | +13.0% |
-| `multilingual_single` | 792 | 17.9365 | 0.04 | 14.5212 | 0.05 | [0.04, 0.06] | +23.5% |
-| `multilingual_batch` | 25,440 | 580.1827 | 0.04 | 554.2311 | 0.05 | [0.05, 0.05] | +4.7% |
-| `source_code_single` | 1,050 | 2.0265 | 0.52 | 1.5633 | 0.67 | [0.56, 0.82] | +29.6% |
-| `source_code_batch` | 33,696 | 58.7233 | 0.57 | 52.6559 | 0.64 | [0.61, 0.69] | +11.5% |
-
-## 6. Verification & Exact Parity Gate
-
-- **Parity Gate**: 100% verified exact token match, token ID match, offset span alignment, and decode round-trip across all fixtures.
-- **Security Refusal**: Verified that fullwidth control token obfuscation (`＜|`) and lone surrogates are rejected with identical error semantics.
-- **API Compatibility**: Zero breaking changes to public tokenizer interfaces.
+Issue #101 remains partially addressed: isolated native input access, materialization, copied bytes, and
+allocation-volume attribution still require native instrumentation. No universal performance claim follows
+from these synthetic measurements. Frozen research artifacts and release configuration are unchanged.

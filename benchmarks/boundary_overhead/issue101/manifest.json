@@ -1,7 +1,8 @@
 {
+  "schema_version": 2,
   "issue": 101,
   "published_files": {
-    "results.json": "1f31bdbe9f3677cf7a17547e4c1e155e0f8be5c26012cfc7b4cd800aba5a6c7b",
-    "REPORT.md": "547a7eec72ce606a558613b2ee96ba1433bdd10c8fe8c94021db33aef69282c7"
+    "results.json": "937a016f93b685e8c749fa0c4d7f2a37a453ef5d0840d18ded78e87112636e55",
+    "REPORT.md": "77315fde66538f500a326dafa4e2cd448abb4611e213de2ab1f051da1b91a9fc"
   }
 }
