@@ -1,934 +1,513 @@
-"""Canonical microbenchmarks and profiler for Python-Rust boundary and FFI overhead.
+"""Paired public-API measurements of two Python guards, plus boundary diagnostics.
 
-Implements the measurement contract for Issue #101:
-- Profiles 5 targeted crossings:
-  1. Python string to Rust UTF-8 access (input conversion);
-  2. Rust token IDs to Python containers (result materialization);
-  3. Batch output construction;
-  4. Python object creation and reference management;
-  5. Repeated FFI crossings across public encode/decode variants.
-- Decomposes end-to-end execution into input conversion, native computation,
-  and result materialization.
-- Measures normalized throughput (MB/s), latency (p50/p95), copied bytes,
-  allocation volume, and peak memory.
-- Enforces strict exact parity gates across tokens, IDs, offsets, errors, and decode.
+The Python-only probes do not measure Rust UTF-8 access or native materialization.
+Independent timings are not an additive decomposition of end-to-end latency.
+Only embedded synthetic fixtures are used; no research data is opened.
 """
 
 from __future__ import annotations
 
 import argparse
-import ctypes
+from collections import Counter
+from contextlib import ExitStack, contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import math
 import os
+from pathlib import Path
 import platform
+import random
+import statistics
 import sys
 import time
+import tracemalloc
 import unicodedata
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from unittest.mock import patch
 
-# Suppress debug logs from tokenizer during benchmark
-logging.getLogger("uniqtoken").setLevel(logging.ERROR)
+from benchmarks.profile_hot_paths import (
+    FIXTURES,
+    ROOT,
+    git_value,
+    make_tokenizer as make_benchmark_tokenizer,
+    native_file,
+    reference_raw_spans,
+    sha256,
+    tool_version,
+    workload_cases,
+)
+from benchmarks.profile_residual_native import peak_rss
+from uniqtoken import _native
+from uniqtoken.tokenizer import CustomTokenizer
+import uniqtoken.tokenizer as tokenizer_module
 
-ROOT = Path(__file__).resolve().parents[1]
-
-FIXTURES = {
-    "short": "The quick brown fox jumps over 42 lazy dogs.",
-    "medium": "Tokenizer throughput depends on normalization, Unicode handling, and lattice search. " * 12,
-    "long": "Reliable measurements use fixed inputs and repeated trials across tokenization paths. " * 55,
-    "multilingual": "Cafe\u0301 \u0928\u092e\u0938\u094d\u0924\u0947 \u4e16\u754c \ud55c\uad6d\uc5b4 \U0001f469\u200d\U0001f4bb data 2026. "
-    * 12,
-    "source_code": "def encode_text(items: list[str]) -> list[int]:\n    return [len(item.encode('utf-8')) for item in items]\n"
-    * 10,
-}
-
-
-def get_peak_rss_bytes() -> int:
-    """Return process high-water mark resident memory in bytes."""
-    if os.name != "nt":
-        import resource
-
-        kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return int(kb * (1 if sys.platform == "darwin" else 1024))
-
-    from ctypes import wintypes
-
-    class ProcessMemoryCounters(ctypes.Structure):
-        _fields_ = [
-            ("cb", wintypes.DWORD),
-            ("PageFaultCount", wintypes.DWORD),
-            ("PeakWorkingSetSize", ctypes.c_size_t),
-            ("WorkingSetSize", ctypes.c_size_t),
-            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-            ("QuotaPagedPoolUsage", ctypes.c_size_t),
-            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-            ("PagefileUsage", ctypes.c_size_t),
-            ("PeakPagefileUsage", ctypes.c_size_t),
-        ]
-
-    try:
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        psapi = ctypes.WinDLL("psapi", use_last_error=True)
-        counts = ProcessMemoryCounters()
-        counts.cb = ctypes.sizeof(counts)
-        if psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counts), counts.cb):
-            return int(counts.PeakWorkingSetSize)
-    except Exception:
-        pass
-    return 0
+optimized_requires_python_security = CustomTokenizer._requires_python_security
+NATIVE_IDS = ("rust_encode_text_native_ids", "rust_encode_text_native_ids_batch")
+ITERATIONS = 5
 
 
-def get_hardware_topology() -> Dict[str, Any]:
-    physical_cores = os.cpu_count() or 1
-    logical_cores = physical_cores
-    total_ram_gb = 8.0
-    try:
-        import psutil
-
-        physical_cores = psutil.cpu_count(logical=False) or physical_cores
-        logical_cores = psutil.cpu_count(logical=True) or logical_cores
-        total_ram_gb = round(psutil.virtual_memory().total / (1024**3), 2)
-    except ImportError:
-        pass
-
-    return {
-        "platform": platform.platform(),
-        "processor": platform.processor(),
-        "python_version": sys.version.split()[0],
-        "physical_cores": physical_cores,
-        "logical_cores": logical_cores,
-        "total_ram_gb": total_ram_gb,
-    }
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 
 
-def sha256_of_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def compute_bootstrap_ci(data: List[float], n_bootstrap: int = 1000, ci: float = 0.95) -> Tuple[float, float]:
-    if not data:
-        return 0.0, 0.0
-    if len(data) == 1:
-        return data[0], data[0]
-    import random
-
-    rng = random.Random(42)
-    means = []
-    n = len(data)
-    for _ in range(n_bootstrap):
-        sample = [data[rng.randint(0, n - 1)] for _ in range(n)]
-        means.append(sum(sample) / n)
-    means.sort()
-    lower_idx = int((1.0 - ci) / 2.0 * n_bootstrap)
-    upper_idx = int((1.0 + ci) / 2.0 * n_bootstrap) - 1
-    return means[lower_idx], means[upper_idx]
-
-
-def benchmark_timed(func: Callable[[], Any], warmup: int, repetitions: int, iters_per_rep: int) -> List[float]:
-    for _ in range(warmup):
-        for _ in range(iters_per_rep):
-            func()
-    durations = []
-    for _ in range(repetitions):
-        t0 = time.perf_counter_ns()
-        for _ in range(iters_per_rep):
-            func()
-        t1 = time.perf_counter_ns()
-        durations.append((t1 - t0) / (iters_per_rep * 1e6))  # ms per call
-    return durations
-
-
-def make_benchmark_tokenizer():
-    from uniqtoken.tokenizer import CustomTokenizer
-
-    corpus = list(FIXTURES.values()) * 3
-    return CustomTokenizer.train_from_corpus(corpus, target_vocab_size=400, min_frequency=1, verbose=False)
-
-
-# --- Baseline vs Optimized Security and Text Checks ---
-
-
-def baseline_requires_python_security(text: str) -> bool:
-    """Historical baseline pre-FFI check without fast-path bypass."""
-    # Surrogate check
-    has_surrogate = any(0xD800 <= ord(c) <= 0xDFFF for c in text)
-    if has_surrogate or "\ue000" in text or "\ue001" in text:
-        return True
-    return "<|" in unicodedata.normalize("NFKC", text)
-
-
-def optimized_requires_python_security(text: str) -> bool:
-    """Optimized pre-FFI check with isascii() and NFKC less-than/pipe bypass."""
-    if not text.isascii() and any(0xD800 <= ord(c) <= 0xDFFF for c in text):
-        return True
-    if "\ue000" in text or "\ue001" in text:
-        return True
-    # Fast path: < can only be generated from '<', '\ufe64', or '\uff1c'; | only from '|', '\uff5c'
-    if ("<" in text or "\ufe64" in text or "\uff1c" in text) and ("|" in text or "\uff5c" in text):
-        return "<|" in unicodedata.normalize("NFKC", text)
-    return False
-
-
-# --- Parity Verification Gate ---
-
-
-def run_exact_parity_gate(tokenizer, fixtures: Dict[str, str]) -> bool:
-    """Verify exact token, ID, offset, and error behavior parity before recording benchmark data."""
-    for name, text in fixtures.items():
-        # 1. Output tokens parity
-        tokens_normal = tokenizer.encode(text)
-        tokens_batch = tokenizer.encode_batch([text])[0]
-        if tokens_normal != tokens_batch:
-            raise AssertionError(f"Parity mismatch in tokens for fixture {name}")
-
-        # 2. Output token IDs parity
-        ids_normal = tokenizer.encode_to_ids(text)
-        ids_batch = tokenizer.encode_to_ids_batch([text])[0]
-        if ids_normal != ids_batch:
-            raise AssertionError(f"Parity mismatch in token IDs for fixture {name}")
-
-        # 3. Security check equivalence
-        base_sec = baseline_requires_python_security(text)
-        opt_sec = optimized_requires_python_security(text)
-        if base_sec != opt_sec:
-            raise AssertionError(f"Security check parity mismatch for fixture {name}: {base_sec} vs {opt_sec}")
-
-        # 4. Decode parity
-        decoded = tokenizer.decode(ids_normal)
-        if not decoded and text:
-            raise AssertionError(f"Decode returned empty string for non-empty fixture {name}")
-
-    # 5. Security refusal parity test cases
-    security_cases = [
-        "Normal clean text",
-        "Text with <|control|> token",
-        "Text with \uff1c|fullwidth_bracket|>",
-        "Text with surrogate \ud800 text",
-        "Text with metaspace \ue000 escape",
-    ]
-    for s in security_cases:
-        base_sec = baseline_requires_python_security(s)
-        opt_sec = optimized_requires_python_security(s)
-        if base_sec != opt_sec:
-            raise AssertionError(f"Security gate mismatch on test case {s!r}: {base_sec} vs {opt_sec}")
-
+def baseline_native_text_supported(text):
+    """The pre-PR helper, including its surrogate warning."""
+    if any(0xD800 <= ord(char) <= 0xDFFF for char in text):
+        logging.getLogger("uniqtoken.native").warning(
+            "lone surrogate cannot cross the UTF-8 native boundary; using Python implementation"
+        )
+        return False
     return True
 
 
-# --- Microbenchmarks for the 5 Crossings ---
-
-
-@dataclass
-class MicrobenchmarkResult:
-    crossing: str
-    description: str
-    call_count: int
-    copied_bytes: int
-    p50_latency_ms: float
-    p95_latency_ms: float
-    throughput_mb_s: float
-    allocation_volume_bytes: int
-    peak_memory_bytes: int
-    detail: Dict[str, Any]
-
-
-def run_crossing_1_string_utf8_access(warmup: int, reps: int) -> Dict[str, MicrobenchmarkResult]:
-    """Crossing 1: Python string to Rust UTF-8 access (input conversion).
-
-    Measures string inspection, surrogate checking, and UTF-8 buffer access across batch sequences.
-    """
-    results = {}
-    batch_texts = [FIXTURES["medium"] + f" #{i}" for i in range(32)]
-    total_bytes = sum(len(t.encode("utf-8")) for t in batch_texts)
-
-    # Baseline: Character iteration and surrogate check across batch
-    def baseline_input_access():
-        extracted = []
-        for s in batch_texts:
-            _ = any(0xD800 <= ord(c) <= 0xDFFF for c in s)
-            extracted.append(s)
-        return extracted
-
-    samples_base = benchmark_timed(baseline_input_access, warmup, reps, 20)
-    samples_base.sort()
-    p50_base = samples_base[len(samples_base) // 2]
-    p95_base = samples_base[int(len(samples_base) * 0.95)]
-    tp_base = (total_bytes / (p50_base * 1e-3)) / 1e6
-
-    results["baseline"] = MicrobenchmarkResult(
-        crossing="crossing_1_string_utf8_access",
-        description="Baseline Python string traversal with per-char surrogate checks",
-        call_count=len(batch_texts),
-        copied_bytes=0,  # zero-copy references
-        p50_latency_ms=round(p50_base, 5),
-        p95_latency_ms=round(p95_base, 5),
-        throughput_mb_s=round(tp_base, 2),
-        allocation_volume_bytes=sys.getsizeof(batch_texts),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"batch_size": len(batch_texts), "total_input_bytes": total_bytes},
+def baseline_requires_python_security(text):
+    return (
+        not baseline_native_text_supported(text)
+        or "\ue000" in text
+        or "\ue001" in text
+        or "<|" in unicodedata.normalize("NFKC", text)
     )
 
-    # Optimized: isascii() fast path + pointer reference
-    def optimized_input_access():
-        extracted = []
-        for s in batch_texts:
-            if not s.isascii():
-                _ = any(0xD800 <= ord(c) <= 0xDFFF for c in s)
-            extracted.append(s)
-        return extracted
 
-    samples_opt = benchmark_timed(optimized_input_access, warmup, reps, 20)
-    samples_opt.sort()
-    p50_opt = samples_opt[len(samples_opt) // 2]
-    p95_opt = samples_opt[int(len(samples_opt) * 0.95)]
-    tp_opt = (total_bytes / (p50_opt * 1e-3)) / 1e6
-
-    results["optimized"] = MicrobenchmarkResult(
-        crossing="crossing_1_string_utf8_access",
-        description="Optimized zero-copy borrowed access with isascii() fast check",
-        call_count=len(batch_texts),
-        copied_bytes=0,
-        p50_latency_ms=round(p50_opt, 5),
-        p95_latency_ms=round(p95_opt, 5),
-        throughput_mb_s=round(tp_opt, 2),
-        allocation_volume_bytes=sys.getsizeof(batch_texts),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"batch_size": len(batch_texts), "total_input_bytes": total_bytes},
-    )
-    return results
-
-
-def run_crossing_2_token_ids_to_containers(warmup: int, reps: int) -> Dict[str, MicrobenchmarkResult]:
-    """Crossing 2: Rust token IDs to Python containers (result materialization).
-
-    Measures time to materialize native u32 token IDs into Python List[int].
-    """
-    results = {}
-    token_counts = [64, 512, 4096]
-    for count in token_counts:
-        raw_ids = [(i * 37) % 32000 for i in range(count)]
-        byte_size = count * 4
-
-        # Materialization: converting raw integer sequence into Python list
-        def materialize_ids():
-            return list(raw_ids)
-
-        samples = benchmark_timed(materialize_ids, warmup, reps, 50)
-        samples.sort()
-        p50 = samples[len(samples) // 2]
-        p95 = samples[int(len(samples) * 0.95)]
-        tp = (byte_size / (p50 * 1e-3)) / 1e6
-        # PyLong is 28 bytes on 64-bit CPython; list pointer is 8 bytes
-        alloc_bytes = count * (28 + 8) + 56
-
-        results[f"ids_{count}"] = MicrobenchmarkResult(
-            crossing="crossing_2_token_ids_to_containers",
-            description=f"Materialization of {count} token IDs into Python List[int]",
-            call_count=1,
-            copied_bytes=count * 4,
-            p50_latency_ms=round(p50, 6),
-            p95_latency_ms=round(p95, 6),
-            throughput_mb_s=round(tp, 2),
-            allocation_volume_bytes=alloc_bytes,
-            peak_memory_bytes=get_peak_rss_bytes(),
-            detail={"token_count": count},
+@contextmanager
+def implementation(variant):
+    """Restore pre-PR checks inside the public call path, outside timed regions."""
+    if variant == "optimized":
+        yield
+        return
+    if variant != "baseline":
+        raise ValueError(f"unknown implementation: {variant}")
+    current = _native.native_text_supported
+    with ExitStack() as stack:
+        for name, module in list(sys.modules.items()):
+            if name.startswith("uniqtoken") and getattr(module, "native_text_supported", None) is current:
+                stack.enter_context(patch.object(module, "native_text_supported", baseline_native_text_supported))
+        stack.enter_context(
+            patch.object(CustomTokenizer, "_requires_python_security", staticmethod(baseline_requires_python_security))
         )
-    return results
+        yield
 
 
-def run_crossing_3_batch_output_construction(warmup: int, reps: int) -> Dict[str, MicrobenchmarkResult]:
-    """Crossing 3: Batch output construction.
-
-    Measures construction of nested List[List[int]] structures across batch sizes.
-    """
-    results = {}
-    for batch_size in [1, 8, 32, 128]:
-        row_ids = [100 + j for j in range(32)]
-        total_tokens = batch_size * len(row_ids)
-
-        def construct_batch_output():
-            out = []
-            for _ in range(batch_size):
-                out.append(list(row_ids))
-            return out
-
-        samples = benchmark_timed(construct_batch_output, warmup, reps, 30)
-        samples.sort()
-        p50 = samples[len(samples) // 2]
-        p95 = samples[int(len(samples) * 0.95)]
-        copied = total_tokens * 4
-        alloc = batch_size * (sys.getsizeof(row_ids) + 32 * 8) + sys.getsizeof([])
-
-        results[f"batch_{batch_size}"] = MicrobenchmarkResult(
-            crossing="crossing_3_batch_output_construction",
-            description=f"Construct nested batch container List[List[int]] (N={batch_size})",
-            call_count=batch_size,
-            copied_bytes=copied,
-            p50_latency_ms=round(p50, 6),
-            p95_latency_ms=round(p95, 6),
-            throughput_mb_s=round((copied / (p50 * 1e-3)) / 1e6, 2) if p50 > 0 else 0.0,
-            allocation_volume_bytes=alloc,
-            peak_memory_bytes=get_peak_rss_bytes(),
-            detail={"batch_size": batch_size, "total_tokens": total_tokens},
-        )
-    return results
+def require_native(tok):
+    native = tokenizer_module._native_core
+    if (
+        native is None
+        or any(not callable(getattr(native, name, None)) for name in NATIVE_IDS)
+        or tok._native_pipeline_kwargs() is None
+        or tok.model._get_rust_trie() is None
+    ):
+        raise RuntimeError("native IDs APIs and a compatible native tokenizer are required")
+    return native
 
 
-def run_crossing_4_python_object_creation(warmup: int, reps: int) -> Dict[str, MicrobenchmarkResult]:
-    """Crossing 4: Python object creation and reference management.
+def observed_native_calls(tok, call):
+    """Count actual native API entries in a separate, untimed invocation."""
+    native = require_native(tok)
+    counts = Counter()
+    with ExitStack() as stack:
+        for name in NATIVE_IDS:
+            original = getattr(native, name)
 
-    Quantifies CPython heap object allocation for token strings vs integer IDs.
-    """
-    results = {}
-    count = 1000
+            def counted(*args, _name=name, _original=original, **kwargs):
+                counts[_name] += 1
+                return _original(*args, **kwargs)
 
-    # 1. Integer object creation
-    def create_ints():
-        return [i + 500 for i in range(count)]
-
-    samples_int = benchmark_timed(create_ints, warmup, reps, 30)
-    samples_int.sort()
-    p50_int = samples_int[len(samples_int) // 2]
-    p95_int = samples_int[int(len(samples_int) * 0.95)]
-
-    results["ints"] = MicrobenchmarkResult(
-        crossing="crossing_4_python_object_creation",
-        description=f"Creation of {count} distinct PyLong objects (> 256)",
-        call_count=count,
-        copied_bytes=count * 4,
-        p50_latency_ms=round(p50_int, 6),
-        p95_latency_ms=round(p95_int, 6),
-        throughput_mb_s=round(((count * 4) / (p50_int * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=count * 28 + sys.getsizeof([]),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"object_type": "PyLong", "count": count},
-    )
-
-    # 2. String object creation
-    sample_tokens = [f"tok_{i:04d}" for i in range(count)]
-
-    def create_strings():
-        return [f"tok_{i:04d}" for i in range(count)]
-
-    samples_str = benchmark_timed(create_strings, warmup, reps, 30)
-    samples_str.sort()
-    p50_str = samples_str[len(samples_str) // 2]
-    p95_str = samples_str[int(len(samples_str) * 0.95)]
-
-    results["strings"] = MicrobenchmarkResult(
-        crossing="crossing_4_python_object_creation",
-        description=f"Creation of {count} PyUnicode string objects",
-        call_count=count,
-        copied_bytes=sum(len(s.encode("utf-8")) for s in sample_tokens),
-        p50_latency_ms=round(p50_str, 6),
-        p95_latency_ms=round(p95_str, 6),
-        throughput_mb_s=round(((count * 8) / (p50_str * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=sum(sys.getsizeof(s) for s in sample_tokens) + sys.getsizeof([]),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"object_type": "PyUnicode", "count": count},
-    )
-    return results
+            stack.enter_context(patch.object(native, name, counted))
+        result = call()
+    return dict(counts), result
 
 
-def run_crossing_5_repeated_ffi_crossings(tokenizer, warmup: int, reps: int) -> Dict[str, MicrobenchmarkResult]:
-    """Crossing 5: Repeated FFI crossings across public encode/decode variants.
-
-    Compares per-item Python loop (N crossings) vs single batched call (1 crossing),
-    and baseline pre-checks vs optimized pre-checks.
-    """
-    results = {}
-    batch_texts = [FIXTURES["medium"] + f" #{i}" for i in range(32)]
-    total_bytes = sum(len(t.encode("utf-8")) for t in batch_texts)
-
-    # 1. Baseline pre-FFI security check overhead across batch
-    def baseline_batch_prechecks():
-        return [baseline_requires_python_security(t) for t in batch_texts]
-
-    samples_pre_base = benchmark_timed(baseline_batch_prechecks, warmup, reps, 20)
-    samples_pre_base.sort()
-    p50_pre_base = samples_pre_base[len(samples_pre_base) // 2]
-    p95_pre_base = samples_pre_base[int(len(samples_pre_base) * 0.95)]
-
-    results["baseline_precheck"] = MicrobenchmarkResult(
-        crossing="crossing_5_repeated_ffi_crossings",
-        description="Baseline pre-FFI checks with unconditional NFKC normalize on batch",
-        call_count=len(batch_texts),
-        copied_bytes=0,
-        p50_latency_ms=round(p50_pre_base, 5),
-        p95_latency_ms=round(p95_pre_base, 5),
-        throughput_mb_s=round((total_bytes / (p50_pre_base * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=sum(len(t) * 4 for t in batch_texts),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"check_type": "baseline_nfkc", "batch_size": len(batch_texts)},
-    )
-
-    # 2. Optimized pre-FFI security check overhead across batch
-    def optimized_batch_prechecks():
-        return [optimized_requires_python_security(t) for t in batch_texts]
-
-    samples_pre_opt = benchmark_timed(optimized_batch_prechecks, warmup, reps, 20)
-    samples_pre_opt.sort()
-    p50_pre_opt = samples_pre_opt[len(samples_pre_opt) // 2]
-    p95_pre_opt = samples_pre_opt[int(len(samples_pre_opt) * 0.95)]
-
-    results["optimized_precheck"] = MicrobenchmarkResult(
-        crossing="crossing_5_repeated_ffi_crossings",
-        description="Optimized pre-FFI checks with NFKC less-than bypass on batch",
-        call_count=len(batch_texts),
-        copied_bytes=0,
-        p50_latency_ms=round(p50_pre_opt, 5),
-        p95_latency_ms=round(p95_pre_opt, 5),
-        throughput_mb_s=round((total_bytes / (p50_pre_opt * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=0,  # 0 allocations on clean text
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"check_type": "optimized_bypass", "batch_size": len(batch_texts)},
-    )
-
-    # 3. Iterative crossings: calling encode_to_ids individually in loop
-    def iterative_encode_ids():
-        return [tokenizer.encode_to_ids(t) for t in batch_texts]
-
-    samples_iter = benchmark_timed(iterative_encode_ids, warmup, reps, 5)
-    samples_iter.sort()
-    p50_iter = samples_iter[len(samples_iter) // 2]
-    p95_iter = samples_iter[int(len(samples_iter) * 0.95)]
-
-    results["iterative_crossing"] = MicrobenchmarkResult(
-        crossing="crossing_5_repeated_ffi_crossings",
-        description=f"Iterative per-item crossings: N={len(batch_texts)} separate FFI calls",
-        call_count=len(batch_texts),
-        copied_bytes=total_bytes,
-        p50_latency_ms=round(p50_iter, 5),
-        p95_latency_ms=round(p95_iter, 5),
-        throughput_mb_s=round((total_bytes / (p50_iter * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=sys.getsizeof(batch_texts) * 2,
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"call_count": len(batch_texts), "total_input_bytes": total_bytes},
-    )
-
-    # 4. Batched crossing: single encode_to_ids_batch
-    def batched_encode_ids():
-        return tokenizer.encode_to_ids_batch(batch_texts)
-
-    samples_batched = benchmark_timed(batched_encode_ids, warmup, reps, 5)
-    samples_batched.sort()
-    p50_batched = samples_batched[len(samples_batched) // 2]
-    p95_batched = samples_batched[int(len(samples_batched) * 0.95)]
-
-    results["batched_crossing"] = MicrobenchmarkResult(
-        crossing="crossing_5_repeated_ffi_crossings",
-        description="Batched crossing: 1 fused FFI call for entire batch",
-        call_count=1,
-        copied_bytes=total_bytes,
-        p50_latency_ms=round(p50_batched, 5),
-        p95_latency_ms=round(p95_batched, 5),
-        throughput_mb_s=round((total_bytes / (p50_batched * 1e-3)) / 1e6, 2),
-        allocation_volume_bytes=sys.getsizeof(batch_texts),
-        peak_memory_bytes=get_peak_rss_bytes(),
-        detail={"call_count": 1, "total_input_bytes": total_bytes},
-    )
-
-    return results
+def capture(call):
+    try:
+        return {"value": call()}
+    except Exception as error:
+        return {"error": type(error).__name__, "args": repr(error.args)}
 
 
-# --- Stage Decomposition (Input Conversion, Native Compute, Result Materialization) ---
+def snapshot(tok, text, options):
+    calls = {
+        "tokens": lambda: tok.encode(text, **options),
+        "ids": lambda: tok.encode_to_ids(text, **options),
+        "offsets": lambda: [(t.text, t.id, t.raw_span) for t in tok.encode_with_offsets(text, **options)],
+        "batch_tokens": lambda: tok.encode_batch([text, text], **options),
+        "batch_ids": lambda: tok.encode_to_ids_batch([text, text], **options),
+        "batch_offsets": lambda: [
+            [(t.text, t.id, t.raw_span) for t in row] for row in tok.encode_with_offsets_batch([text, text], **options)
+        ],
+        "decode_ids": lambda: tok.decode(tok.encode_to_ids(text, **options)),
+        "decode_tokens": lambda: tok.decode_tokens(tok.encode(text, **options)),
+        "decode_batch": lambda: tok.decode_batch(tok.encode_to_ids_batch([text, text], **options)),
+        "invalid_ids": lambda: tok.decode([-1, tok.vocab_size + 100]),
+    }
+    return {name: capture(call) for name, call in calls.items()}
 
 
-@dataclass
-class StageDecomposition:
-    workload: str
-    normalized_input_bytes: int
-    total_latency_ms: float
-    input_conversion_ms: float
-    input_conversion_pct: float
-    native_compute_ms: float
-    native_compute_pct: float
-    materialization_ms: float
-    materialization_pct: float
-    throughput_mb_s: float
-
-
-def decompose_workload_stages(tokenizer, workload_name: str, texts: List[str]) -> StageDecomposition:
-    """Decompose end-to-end execution into input conversion, native computation, and materialization."""
-    total_bytes = sum(len(t.encode("utf-8")) for t in texts)
-    n = len(texts)
-
-    # Measure Input Conversion (validations, string borrowing, pre-checks)
-    t0 = time.perf_counter_ns()
-    for _ in range(10):
-        for t in texts:
-            _ = optimized_requires_python_security(t)
-    t_input_ms = ((time.perf_counter_ns() - t0) / 10) / 1e6
-
-    # Measure End-to-End
-    t0 = time.perf_counter_ns()
-    for _ in range(10):
-        _ = tokenizer.encode_to_ids_batch(texts)
-    t_total_ms = ((time.perf_counter_ns() - t0) / 10) / 1e6
-
-    # Materialization: constructing List[List[int]] from sample tokens
-    sample_ids = tokenizer.encode_to_ids_batch(texts)
-    t0 = time.perf_counter_ns()
-    for _ in range(10):
-        _ = [list(r) for r in sample_ids]
-    t_mat_ms = ((time.perf_counter_ns() - t0) / 10) / 1e6
-
-    t_compute_ms = max(0.0, t_total_ms - t_input_ms - t_mat_ms)
-
-    pct_input = round((t_input_ms / t_total_ms) * 100, 2)
-    pct_comp = round((t_compute_ms / t_total_ms) * 100, 2)
-    pct_mat = round((t_mat_ms / t_total_ms) * 100, 2)
-    tp = (total_bytes / (t_total_ms * 1e-3)) / 1e6
-
-    return StageDecomposition(
-        workload=workload_name,
-        normalized_input_bytes=total_bytes,
-        total_latency_ms=round(t_total_ms, 5),
-        input_conversion_ms=round(t_input_ms, 5),
-        input_conversion_pct=pct_input,
-        native_compute_ms=round(t_compute_ms, 5),
-        native_compute_pct=pct_comp,
-        materialization_ms=round(t_mat_ms, 5),
-        materialization_pct=pct_mat,
-        throughput_mb_s=round(tp, 2),
-    )
-
-
-# --- End-to-End Before/After Macrobenchmarks ---
-
-
-@dataclass
-class MacrobenchmarkCell:
-    workload: str
-    mode: str
-    normalized_bytes: int
-    before_p50_ms: float
-    before_p95_ms: float
-    before_mb_s: float
-    after_p50_ms: float
-    after_p95_ms: float
-    after_mb_s: float
-    throughput_gain_pct: float
-    ci_95_after_mb_s: Tuple[float, float]
-    peak_rss_bytes: int
-
-
-def run_macrobenchmark_matrix(tokenizer, warmup: int, reps: int) -> List[MacrobenchmarkCell]:
-    matrix = []
-    for fixture_name, text in FIXTURES.items():
-        for mode in ("single", "batch"):
-            cell_name = f"{fixture_name}_{mode}"
-            texts = [text] if mode == "single" else [f"{text} {i:02d}" for i in range(32)]
-            total_bytes = sum(len(t.encode("utf-8")) for t in texts)
-
-            # Before: Simulate baseline with unoptimized pre-crossing NFKC calls
-            def run_before():
-                for t in texts:
-                    _ = baseline_requires_python_security(t)
-                return tokenizer.encode_to_ids_batch(texts)
-
-            samples_before = benchmark_timed(run_before, warmup, reps, 5)
-            samples_before.sort()
-            p50_before = samples_before[len(samples_before) // 2]
-            p95_before = samples_before[int(len(samples_before) * 0.95)]
-            tp_before = (total_bytes / (p50_before * 1e-3)) / 1e6
-
-            # After: Optimized pre-crossing checks
-            def run_after():
-                for t in texts:
-                    _ = optimized_requires_python_security(t)
-                return tokenizer.encode_to_ids_batch(texts)
-
-            samples_after = benchmark_timed(run_after, warmup, reps, 5)
-            samples_after.sort()
-            p50_after = samples_after[len(samples_after) // 2]
-            p95_after = samples_after[int(len(samples_after) * 0.95)]
-            tp_after = (total_bytes / (p50_after * 1e-3)) / 1e6
-
-            throughputs_after = [(total_bytes / (s * 1e-3)) / 1e6 for s in samples_after]
-            ci_low, ci_high = compute_bootstrap_ci(throughputs_after)
-            gain_pct = round(((tp_after - tp_before) / tp_before) * 100, 2)
-
-            matrix.append(
-                MacrobenchmarkCell(
-                    workload=cell_name,
-                    mode=mode,
-                    normalized_bytes=total_bytes,
-                    before_p50_ms=round(p50_before, 4),
-                    before_p95_ms=round(p95_before, 4),
-                    before_mb_s=round(tp_before, 2),
-                    after_p50_ms=round(p50_after, 4),
-                    after_p95_ms=round(p95_after, 4),
-                    after_mb_s=round(tp_after, 2),
-                    throughput_gain_pct=gain_pct,
-                    ci_95_after_mb_s=(round(ci_low, 2), round(ci_high, 2)),
-                    peak_rss_bytes=get_peak_rss_bytes(),
-                )
-            )
-    return matrix
-
-
-# --- Report Generation ---
-
-
-def generate_markdown_report(
-    topology: Dict[str, Any],
-    micro_results: Dict[str, Any],
-    decompositions: List[StageDecomposition],
-    macro_matrix: List[MacrobenchmarkCell],
-) -> str:
-    md = [
-        "# Empirical Investigation: Python-Rust Boundary & FFI Overhead (#101)",
-        "",
-        "## 1. Executive Summary & Evidence from #95",
-        "",
-        "This empirical study profiles residual Python/Rust boundary and FFI overhead in UniqToken as mandated by Issue #101.",
-        "",
-        "- **Evidence from #95**: Issue #95 demonstrated that materialization and boundary operations represent a meaningful time fraction (e.g. output copying took 1.35 ms on source code and 2.31 ms on long batches), but noted that the FFI boundary, allocation, and copying overlap and were treated as an opaque native call in Python call-stacks.",
-        "- **Coordination with #96 / #99**: Issue #96 and #99 (PR #131) bounded internal Viterbi scratch allocations and eliminated temporary owned prefix vectors. This report isolates the residual PyO3/boundary operations without attributing internal Rust lattice memory to PyO3.",
-        "- **Preservation of Guarantees**: Public API signatures and return types are strictly preserved (`List[List[int]]`, `List[List[str]]`). Safe zero-copy buffer borrowing across Rayon threads (`PyBackedStr`) is retained.",
-        "",
-        "## 2. Hardware & Environment Topology",
-        "",
-        f"- **Platform**: {topology['platform']}",
-        f"- **Processor**: {topology['processor']}",
-        f"- **Python Version**: {topology['python_version']}",
-        f"- **Physical / Logical Cores**: {topology['physical_cores']} physical / {topology['logical_cores']} logical",
-        f"- **System RAM**: {topology['total_ram_gb']} GB",
-        "",
-        "## 3. Boundary Stage Decomposition",
-        "",
-        "Decomposition of execution time into Input Conversion ($T_{\\text{input}}$), Native Computation ($T_{\\text{native}}$), and Result Materialization ($T_{\\text{mat}}$):",
-        "",
-        "| Workload | Input Bytes | Total (ms) | Input Conv (ms) | Input % | Native Comp (ms) | Native % | Materialization (ms) | Mat % | Throughput (MB/s) |",
-        "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+def run_exact_parity_gate(tok, fixtures=FIXTURES):
+    cases = [(name, text, {}) for name, text in fixtures.items()]
+    security_texts = [
+        "literal <|unk|> marker",
+        "compatibility \ufe64\uff5cunk\uff5c\uff1e marker",
+        "combining <\u0301|unk|> marker",
+        "private \ue000 and \ue001",
+        "surrogate \ud800",
+        "emoji \U0001f469\u200d\U0001f4bb",
     ]
-    for d in decompositions:
-        md.append(
-            f"| `{d.workload}` | {d.normalized_input_bytes:,} | {d.total_latency_ms:.4f} | {d.input_conversion_ms:.4f} | {d.input_conversion_pct:.1f}% | {d.native_compute_ms:.4f} | {d.native_compute_pct:.1f}% | {d.materialization_ms:.4f} | {d.materialization_pct:.1f}% | {d.throughput_mb_s:.2f} |"
+    for index, text in enumerate(security_texts):
+        for action in ("escape", "raise", "ignore"):
+            cases.append((f"security_{index}_{action}", text, {"disallowed_special_action": action}))
+        cases.append((f"security_{index}_allowed", text, {"allowed_special": "all"}))
+    verified = []
+    for name, text, options in cases:
+        with implementation("baseline"):
+            before = snapshot(tok, text, options)
+        after = snapshot(tok, text, options)
+        if before != after:
+            raise AssertionError(f"baseline/optimized API parity failed: {name}")
+        if name in fixtures:
+            if any("error" in value for key, value in after.items() if key != "invalid_ids"):
+                raise AssertionError(f"ordinary fixture raised: {name}")
+            tokens, ids = after["tokens"]["value"], after["ids"]["value"]
+            offsets = after["offsets"]["value"]
+            if [(t, i) for t, i, _ in offsets] != list(zip(tokens, ids)):
+                raise AssertionError(f"offset token/ID mismatch: {name}")
+            if [span for _, _, span in offsets] != reference_raw_spans(tok, text, tokens):
+                raise AssertionError(f"independent raw-span oracle failed: {name}")
+            if after["decode_ids"] != after["decode_tokens"]:
+                raise AssertionError(f"decode mismatch: {name}")
+            for single, batch in (("tokens", "batch_tokens"), ("ids", "batch_ids"), ("offsets", "batch_offsets")):
+                if after[batch]["value"] != [after[single]["value"]] * 2:
+                    raise AssertionError(f"single/batch mismatch: {name}/{single}")
+        verified.append({"name": name, "input_sha256": digest(text), "output_sha256": digest(after)})
+    return verified
+
+
+def timed(call, iterations=1):
+    start = time.perf_counter_ns()
+    for _ in range(iterations):
+        call()
+    return (time.perf_counter_ns() - start) / iterations / 1e6
+
+
+def timing_summary(samples):
+    if not samples or any(not math.isfinite(value) or value <= 0 for value in samples):
+        raise ValueError("timing samples must be positive and finite")
+    return {
+        "samples_ms": samples,
+        "p50_ms": statistics.median(samples),
+        "p95_ms": sorted(samples)[math.ceil(0.95 * len(samples)) - 1],
+    }
+
+
+def python_memory(call):
+    """Retained/peak traced Python heap; excludes Rust allocations and RSS."""
+    if tracemalloc.is_tracing():
+        raise RuntimeError("a separate tracemalloc session is required")
+    tracemalloc.start()
+    try:
+        result = call()
+        retained, peak = tracemalloc.get_traced_memory()
+        return {"retained_bytes": retained, "peak_bytes": peak, "scope": "Python traced heap only"}
+    finally:
+        tracemalloc.stop()
+
+
+def probe(description, call, warmup, reps):
+    for _ in range(warmup):
+        call()
+    return {
+        "description": description,
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": None,
+        "latency": timing_summary([timed(call) for _ in range(reps)]),
+        "memory": python_memory(call),
+    }
+
+
+def run_crossing_1_string_utf8_access(warmup=3, reps=11):
+    texts = [FIXTURES["medium"]] * 32
+    return {
+        name: probe(
+            "Python surrogate-support check; no Rust UTF-8 access", lambda: [helper(t) for t in texts], warmup, reps
         )
+        for name, helper in (("baseline", baseline_native_text_supported), ("optimized", _native.native_text_supported))
+    }
 
-    md.extend(
-        [
-            "",
-            "## 4. Targeted Boundary Crossings (Microbenchmarks)",
-            "",
-            "### Crossing 1: Python String to Rust UTF-8 Access (Input Conversion)",
-            "",
-            "| Variant | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Copied Bytes | Memory (RSS) |",
-            "| :--- | ---: | ---: | ---: | ---: | ---: |",
-        ]
-    )
-    c1 = micro_results["crossing_1"]
-    md.append(
-        f"| Baseline (character scan) | {c1['baseline'].p50_latency_ms:.5f} | {c1['baseline'].p95_latency_ms:.5f} | {c1['baseline'].throughput_mb_s:.2f} | {c1['baseline'].copied_bytes} B | {c1['baseline'].peak_memory_bytes:,} B |"
-    )
-    md.append(
-        f"| Optimized (`isascii()` fast-path) | {c1['optimized'].p50_latency_ms:.5f} | {c1['optimized'].p95_latency_ms:.5f} | {c1['optimized'].throughput_mb_s:.2f} | {c1['optimized'].copied_bytes} B | {c1['optimized'].peak_memory_bytes:,} B |"
-    )
 
-    md.extend(
-        [
-            "",
-            "### Crossing 2: Rust Token IDs to Python Containers (Result Materialization)",
-            "",
-            "| Token Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Copied Bytes | Alloc Volume |",
-            "| ---: | ---: | ---: | ---: | ---: | ---: |",
-        ]
-    )
-    c2 = micro_results["crossing_2"]
-    for k, v in c2.items():
-        md.append(
-            f"| {v.detail['token_count']} tokens | {v.p50_latency_ms:.6f} | {v.p95_latency_ms:.6f} | {v.throughput_mb_s:.2f} | {v.copied_bytes:,} B | {v.allocation_volume_bytes:,} B |"
+def run_crossing_2_token_ids_to_containers(warmup=3, reps=11):
+    return {
+        f"ids_{size}": probe(
+            "Shallow Python list copy of existing int references; no Rust integer conversion",
+            lambda ids=list(range(size)): list(ids),
+            warmup,
+            reps,
         )
+        for size in (64, 512, 4096)
+    }
 
-    md.extend(
-        [
-            "",
-            "### Crossing 3: Batch Output Construction (Nested Containers)",
-            "",
-            "| Batch Size | Total Tokens | Latency p50 (ms) | Latency p95 (ms) | Container Alloc Bytes | Memory (RSS) |",
-            "| ---: | ---: | ---: | ---: | ---: | ---: |",
-        ]
-    )
-    c3 = micro_results["crossing_3"]
-    for k, v in c3.items():
-        md.append(
-            f"| N={v.detail['batch_size']} | {v.detail['total_tokens']} | {v.p50_latency_ms:.6f} | {v.p95_latency_ms:.6f} | {v.allocation_volume_bytes:,} B | {v.peak_memory_bytes:,} B |"
+
+def run_crossing_3_batch_output_construction(warmup=3, reps=11):
+    ids = list(range(512))
+    return {
+        f"batch_{size}": probe(
+            "Python nested lists of existing int references; no native output materialization",
+            lambda size=size: [list(ids) for _ in range(size)],
+            warmup,
+            reps,
         )
+        for size in (1, 8, 32, 128)
+    }
 
-    md.extend(
-        [
-            "",
-            "### Crossing 4: Python Object Creation & Reference Overhead",
-            "",
-            "| Object Type | Item Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) | Alloc Volume |",
-            "| :--- | ---: | ---: | ---: | ---: | ---: |",
-        ]
-    )
-    c4 = micro_results["crossing_4"]
-    md.append(
-        f"| `PyLong` (> 256) | {c4['ints'].detail['count']} | {c4['ints'].p50_latency_ms:.6f} | {c4['ints'].p95_latency_ms:.6f} | {c4['ints'].throughput_mb_s:.2f} | {c4['ints'].allocation_volume_bytes:,} B |"
-    )
-    md.append(
-        f"| `PyUnicode` | {c4['strings'].detail['count']} | {c4['strings'].p50_latency_ms:.6f} | {c4['strings'].p95_latency_ms:.6f} | {c4['strings'].throughput_mb_s:.2f} | {c4['strings'].allocation_volume_bytes:,} B |"
-    )
 
-    md.extend(
-        [
-            "",
-            "### Crossing 5: Repeated FFI Crossings Across Encode/Decode Variants",
-            "",
-            "| Crossing Variant | Call Count | Latency p50 (ms) | Latency p95 (ms) | Throughput (MB/s) |",
-            "| :--- | ---: | ---: | ---: | ---: |",
-        ]
-    )
-    c5 = micro_results["crossing_5"]
-    md.append(
-        f"| Baseline pre-check (unconditional NFKC) | {c5['baseline_precheck'].call_count} | {c5['baseline_precheck'].p50_latency_ms:.5f} | {c5['baseline_precheck'].p95_latency_ms:.5f} | {c5['baseline_precheck'].throughput_mb_s:.2f} |"
-    )
-    md.append(
-        f"| Optimized pre-check (`<` / `|` bypass) | {c5['optimized_precheck'].call_count} | {c5['optimized_precheck'].p50_latency_ms:.5f} | {c5['optimized_precheck'].p95_latency_ms:.5f} | {c5['optimized_precheck'].throughput_mb_s:.2f} |"
-    )
-    md.append(
-        f"| Iterative crossings (Python loop of N calls) | {c5['iterative_crossing'].call_count} | {c5['iterative_crossing'].p50_latency_ms:.5f} | {c5['iterative_crossing'].p95_latency_ms:.5f} | {c5['iterative_crossing'].throughput_mb_s:.2f} |"
-    )
-    md.append(
-        f"| Batched crossing (1 fused native call) | {c5['batched_crossing'].call_count} | {c5['batched_crossing'].p50_latency_ms:.5f} | {c5['batched_crossing'].p95_latency_ms:.5f} | {c5['batched_crossing'].throughput_mb_s:.2f} |"
-    )
+def run_crossing_4_python_object_creation(warmup=3, reps=11):
+    return {
+        "ints": probe("Python int creation", lambda: [int(str(i)) for i in range(1000)], warmup, reps),
+        "strings": probe("Python string creation", lambda: [str(i) for i in range(1000)], warmup, reps),
+    }
 
-    md.extend(
-        [
-            "",
-            "## 5. End-to-End Before vs After Performance Matrix",
-            "",
-            "| Workload | Input Bytes | Before p50 (ms) | Before MB/s | After p50 (ms) | After MB/s | 95% CI (MB/s) | Speedup % |",
-            "| :--- | ---: | ---: | ---: | ---: | ---: | :---: | ---: |",
-        ]
-    )
-    for c in macro_matrix:
-        ci_str = f"[{c.ci_95_after_mb_s[0]:.2f}, {c.ci_95_after_mb_s[1]:.2f}]"
-        md.append(
-            f"| `{c.workload}` | {c.normalized_bytes:,} | {c.before_p50_ms:.4f} | {c.before_mb_s:.2f} | {c.after_p50_ms:.4f} | {c.after_mb_s:.2f} | {ci_str} | +{c.throughput_gain_pct:.1f}% |"
+
+def run_crossing_5_repeated_ffi_crossings(tok, warmup=3, reps=11):
+    texts = [FIXTURES["medium"]] * 32
+    records, outputs = {}, []
+    for name, call, expected in (
+        ("iterative", lambda: [tok.encode_to_ids(t) for t in texts], {NATIVE_IDS[0]: len(texts)}),
+        ("batch", lambda: tok.encode_to_ids_batch(texts), {NATIVE_IDS[1]: 1}),
+    ):
+        counts, result = observed_native_calls(tok, call)
+        if counts != expected:
+            raise AssertionError(f"unexpected native path: {name}: {counts}")
+        outputs.append(result)
+        for _ in range(warmup):
+            call()
+        records[name] = {
+            "native_calls": counts,
+            "latency": timing_summary([timed(call) for _ in range(reps)]),
+            "memory": python_memory(call),
+            "copied_native_bytes": None,
+        }
+    if outputs[0] != outputs[1]:
+        raise AssertionError("iterative/fused native IDs differ")
+    return records
+
+
+def measure_boundary_diagnostics(tok, texts, warmup=3, reps=11):
+    calls = {
+        "public_ids_batch": lambda: tok.encode_to_ids_batch(texts),
+        "python_security_checks": lambda: [tok._requires_python_security(text) for text in texts],
+    }
+    result = {"scope": "independent operations; timings are not additive stages"}
+    for name, call in calls.items():
+        for _ in range(warmup):
+            call()
+        result[name] = timing_summary([timed(call) for _ in range(reps)])
+    result.update(native_compute_ms=None, native_materialization_ms=None)
+    return result
+
+
+def paired_interval(ratios):
+    rng = random.Random(0)
+    bootstrap = sorted(statistics.median(rng.choices(ratios, k=len(ratios))) for _ in range(1000))
+    return [bootstrap[24], bootstrap[974]]
+
+
+def run_macrobenchmark_matrix(tok, warmup=3, reps=11, cases=None):
+    records = []
+    for name, texts in workload_cases() if cases is None else cases:
+        single = name.endswith("_single")
+        call = (lambda: tok.encode_to_ids(texts[0])) if single else (lambda: tok.encode_to_ids_batch(texts))
+        expected = {NATIVE_IDS[0 if single else 1]: 1}
+        normalized_bytes = sum(len(tok.normalizer.normalize(t).encode("utf-8")) for t in texts)
+        samples = {variant: [] for variant in ("baseline", "optimized")}
+        memory, counts = {}, {}
+        for variant in samples:
+            with implementation(variant):
+                counts[variant], _ = observed_native_calls(tok, call)
+                if counts[variant] != expected:
+                    raise AssertionError(f"fallback in macro cell: {name}/{variant}")
+                for _ in range(warmup):
+                    for _ in range(ITERATIONS):
+                        call()
+                memory[variant] = python_memory(call)
+        for repetition in range(reps):
+            order = ("baseline", "optimized") if repetition % 2 == 0 else ("optimized", "baseline")
+            for variant in order:
+                with implementation(variant):
+                    samples[variant].append(timed(call, ITERATIONS))
+        ratios = [before / after for before, after in zip(samples["baseline"], samples["optimized"])]
+        summary = {variant: timing_summary(values) for variant, values in samples.items()}
+        for variant in samples:
+            summary[variant]["normalized_MB_per_s"] = normalized_bytes / summary[variant]["p50_ms"] / 1000
+        records.append(
+            {
+                "workload": name,
+                "batch_size": len(texts),
+                "normalized_utf8_bytes": normalized_bytes,
+                "latency": summary,
+                "paired_speed_ratio": statistics.median(ratios),
+                "paired_ratio_95pct_bootstrap_interval": paired_interval(ratios),
+                "native_calls": counts,
+                "python_memory": memory,
+                "output_sha256": digest(call()),
+            }
         )
+    return records
 
-    md.extend(
-        [
-            "",
-            "## 6. Verification & Exact Parity Gate",
-            "",
-            "- **Parity Gate**: 100% verified exact token match, token ID match, offset span alignment, and decode round-trip across all fixtures.",
-            "- **Security Refusal**: Verified that fullwidth control token obfuscation (`\uff1c|`) and lone surrogates are rejected with identical error semantics.",
-            "- **API Compatibility**: Zero breaking changes to public tokenizer interfaces.",
-            "",
-        ]
-    )
-    return "\n".join(md)
+
+def generate_markdown_report(payload):
+    metadata = payload["metadata"]
+    lines = [
+        "# Python guard optimization and boundary diagnostics (#101)",
+        "",
+        "## Scope and method",
+        "",
+        "This is a synthetic engineering diagnostic, not an isolated FFI-stage profile. The baseline restores the",
+        "two pre-PR Python checks inside the public API. Both variants use the same model, native binary, inputs,",
+        "and configuration; no extra precheck is added outside encode. Paired trials alternate execution order.",
+        "Memory is measured separately with tracemalloc and covers only the Python traced heap, not Rust allocations.",
+        "",
+        f"- Source commit: `{metadata['git_commit']}`; clean tracked tree: `{metadata['tracked_tree_clean']}`.",
+        f"- Platform: `{metadata['platform']}`; Python `{metadata['python']}`; Unicode `{metadata['unicode']}`.",
+        f"- Native SHA-256: `{metadata['native_sha256']}`; declared build mode: `{metadata['build_mode']}`.",
+        f"- Rayon threads: {metadata['rayon_threads']}; warmup: {metadata['warmup']}; repetitions: {metadata['repetitions']};",
+        f"  calls per timed public-API trial: {metadata['iterations']}.",
+        "- Fixtures: five embedded text workloads, each single and batch of 32; normalized UTF-8 decimal MB/s.",
+        "- Intervals bootstrap the paired median ratios within one process; they do not establish cross-machine effects.",
+        "- Reproduce with a fresh release extension and committed source:",
+        "  `python -m benchmarks.profile_boundary_overhead --output <new-directory> --threads 1 --warmup 3 --repetitions 11 --build-mode release`.",
+        "",
+        "## Public IDs API results",
+        "",
+        "| Workload | Before MB/s | After MB/s | Before p50/p95 ms | After p50/p95 ms | Paired speed ratio [95% interval] |",
+        "| --- | ---: | ---: | --- | --- | --- |",
+    ]
+    for row in payload["macrobenchmarks"]:
+        before, after = (row["latency"][variant] for variant in ("baseline", "optimized"))
+        low, high = row["paired_ratio_95pct_bootstrap_interval"]
+        lines.append(
+            f"| {row['workload']} | {before['normalized_MB_per_s']:.3f} | {after['normalized_MB_per_s']:.3f} | "
+            f"{before['p50_ms']:.4f}/{before['p95_ms']:.4f} | {after['p50_ms']:.4f}/{after['p95_ms']:.4f} | "
+            f"{row['paired_speed_ratio']:.3f} [{low:.3f}, {high:.3f}] |"
+        )
+    lines += [
+        "",
+        "Ratios above 1 favor the optimized checks. All cells are reported, including regressions and uncertain",
+        "intervals. These comparisons change both checks together; they do not attribute gains to either check alone.",
+        "",
+        "## Boundary diagnostics and parity",
+        "",
+        "The first four probe groups are Python-only operations: surrogate scanning, shallow copies of existing",
+        "integer references, nested-list creation, and Python object creation. They do not time Rust UTF-8 borrowing",
+        "or u32-to-Python conversion. Copied native bytes and Rust allocation volume remain unmeasured.",
+        "",
+        "The fifth group verifies 32 actual single native IDs calls versus one fused native batch IDs call, then",
+        "times those public operations without instrumentation. Their output IDs must match exactly.",
+        "",
+        f"Baseline/optimized parity passed for {len(payload['parity'])} cases covering tokens, IDs, raw offsets, batch",
+        "outputs, decode, invalid IDs, compatibility markers, private-use escapes, surrogates, and security policies.",
+        "Ordinary fixture spans are also checked against an independent normalized-text alignment oracle.",
+        "",
+        "Independent public-batch and Python-check timings are diagnostic operations, not additive stages.",
+        "Native compute and materialization fields are null because they have not been isolated.",
+        "",
+        "## Remaining work",
+        "",
+        "Issue #101 remains partially addressed: isolated native input access, materialization, copied bytes, and",
+        "allocation-volume attribution still require native instrumentation. No universal performance claim follows",
+        "from these synthetic measurements. Frozen research artifacts and release configuration are unchanged.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def publish(payload, output):
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "results.json").write_bytes((json.dumps(payload, indent=2, ensure_ascii=True) + "\n").encode())
+    (output / "REPORT.md").write_bytes(generate_markdown_report(payload).encode())
+    manifest = {
+        "schema_version": 2,
+        "issue": 101,
+        "published_files": {name: sha256(output / name) for name in ("results.json", "REPORT.md")},
+    }
+    (output / "manifest.json").write_bytes((json.dumps(manifest, indent=2) + "\n").encode())
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Profile Python-Rust FFI & boundary overhead")
-    parser.add_argument("--output", type=str, default="benchmarks/boundary_overhead/issue101", help="Output directory")
-    parser.add_argument("--warmup", type=int, default=2, help="Number of warmup iterations")
-    parser.add_argument("--repetitions", type=int, default=7, help="Number of repetition samples")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output", type=Path, required=True, help="new directory; existing evidence is never overwritten"
+    )
+    parser.add_argument("--warmup", type=int, default=3)
+    parser.add_argument("--repetitions", type=int, default=11)
+    parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--build-mode", choices=("release", "debug"), default="release")
     args = parser.parse_args()
-
-    out_dir = Path(args.output)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    print("=== UniqToken Python-Rust Boundary & FFI Profiler (Issue #101) ===")
-    topology = get_hardware_topology()
-    print(f"Topology: {topology['processor']} ({topology['physical_cores']}C / {topology['logical_cores']}T)")
-
-    print("Building canonical tokenizer...")
-    tokenizer = make_benchmark_tokenizer()
-
-    print("Running exact parity verification gate...")
-    run_exact_parity_gate(tokenizer, FIXTURES)
-    print("Exact parity gate PASSED.")
-
-    print("\n--- Running Microbenchmarks Across 5 Targeted Crossings ---")
-    c1 = run_crossing_1_string_utf8_access(args.warmup, args.repetitions)
-    print("  [OK] Crossing 1: Python string to Rust UTF-8 access")
-
-    c2 = run_crossing_2_token_ids_to_containers(args.warmup, args.repetitions)
-    print("  [OK] Crossing 2: Rust token IDs to Python containers")
-
-    c3 = run_crossing_3_batch_output_construction(args.warmup, args.repetitions)
-    print("  [OK] Crossing 3: Batch output construction")
-
-    c4 = run_crossing_4_python_object_creation(args.warmup, args.repetitions)
-    print("  [OK] Crossing 4: Python object creation & reference management")
-
-    c5 = run_crossing_5_repeated_ffi_crossings(tokenizer, args.warmup, args.repetitions)
-    print("  [OK] Crossing 5: Repeated FFI crossings across public encode/decode variants")
-
-    micro_results = {
-        "crossing_1": c1,
-        "crossing_2": c2,
-        "crossing_3": c3,
-        "crossing_4": c4,
-        "crossing_5": c5,
-    }
-
-    print("\n--- Running Stage Decompositions ---")
-    decompositions = []
-    for fixture_name, text in FIXTURES.items():
-        for mode in ("single", "batch"):
-            w_name = f"{fixture_name}_{mode}"
-            texts = [text] if mode == "single" else [f"{text} {i:02d}" for i in range(32)]
-            dec = decompose_workload_stages(tokenizer, w_name, texts)
-            decompositions.append(dec)
-            print(
-                f"  [OK] Decomposed {w_name}: {dec.throughput_mb_s:.2f} MB/s (Input: {dec.input_conversion_pct:.1f}%, Native: {dec.native_compute_pct:.1f}%, Mat: {dec.materialization_pct:.1f}%)"
+    if args.output.exists():
+        parser.error("output already exists; choose a fresh directory")
+    if args.warmup < 0 or args.repetitions < 3 or args.threads < 1:
+        parser.error("warmup >= 0, repetitions >= 3, and threads >= 1 are required")
+    if git_value("status", "--porcelain", "--untracked-files=no"):
+        parser.error("commit tracked source changes before recording evidence")
+    os.environ["RAYON_NUM_THREADS"] = str(args.threads)
+    logging.getLogger("uniqtoken").setLevel(logging.ERROR)
+    tok = make_benchmark_tokenizer()
+    require_native(tok)
+    parity = run_exact_parity_gate(tok)
+    metadata = {
+        "git_commit": git_value("rev-parse", "HEAD"),
+        "git_tree": git_value("rev-parse", "HEAD^{tree}"),
+        "tracked_tree_clean": True,
+        "source_sha256": {
+            name: sha256(ROOT / name)
+            for name in (
+                "benchmarks/profile_boundary_overhead.py",
+                "benchmarks/profile_hot_paths.py",
+                "benchmarks/profile_residual_native.py",
+                "uniqtoken/_native.py",
+                "uniqtoken/tokenizer.py",
             )
-
-    print("\n--- Running End-to-End Before/After Macrobenchmarks ---")
-    macro_matrix = run_macrobenchmark_matrix(tokenizer, args.warmup, args.repetitions)
-    for c in macro_matrix:
-        print(
-            f"  [OK] {c.workload:20s}: {c.before_mb_s:6.2f} -> {c.after_mb_s:6.2f} MB/s (+{c.throughput_gain_pct:5.1f}%)"
-        )
-
-    # Save results.json
-    results_payload = {
-        "issue": 101,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "topology": topology,
-        "microbenchmarks": {
-            k: {inner_k: asdict(inner_v) for inner_k, inner_v in v.items()} for k, v in micro_results.items()
         },
-        "stage_decompositions": [asdict(d) for d in decompositions],
-        "macrobenchmarks": [asdict(c) for c in macro_matrix],
+        "native_sha256": sha256(Path(native_file())),
+        "native_filename": Path(native_file()).name,
+        "model_sha256": digest(sorted((t, score, tok.model.token_to_id[t]) for t, score in tok.model.vocab.items())),
+        "fixture_sha256": digest(FIXTURES),
+        "platform": platform.platform(),
+        "processor": platform.processor(),
+        "logical_cpu_count": os.cpu_count(),
+        "physical_cpu_count": None,
+        "ram_bytes": None,
+        "python": platform.python_version(),
+        "unicode": unicodedata.unidata_version,
+        "rustc": tool_version("rustc", "--version"),
+        "build_mode": args.build_mode,
+        "rayon_threads": args.threads,
+        "warmup": args.warmup,
+        "repetitions": args.repetitions,
+        "iterations": ITERATIONS,
+        "utc_time": datetime.now(timezone.utc).isoformat(),
     }
-    results_path = out_dir / "results.json"
-    results_path.write_text(json.dumps(results_payload, indent=2), encoding="utf-8")
-    print(f"\nWrote results to {results_path}")
-
-    # Save REPORT.md
-    report_md = generate_markdown_report(topology, micro_results, decompositions, macro_matrix)
-    report_path = out_dir / "REPORT.md"
-    report_path.write_text(report_md, encoding="utf-8")
-    print(f"Wrote report to {report_path}")
-
-    # Save manifest.json
-    manifest = {
+    probes = {
+        "python_support_checks": run_crossing_1_string_utf8_access(args.warmup, args.repetitions),
+        "python_list_copies": run_crossing_2_token_ids_to_containers(args.warmup, args.repetitions),
+        "python_nested_lists": run_crossing_3_batch_output_construction(args.warmup, args.repetitions),
+        "python_objects": run_crossing_4_python_object_creation(args.warmup, args.repetitions),
+        "native_single_vs_batch": run_crossing_5_repeated_ffi_crossings(tok, args.warmup, args.repetitions),
+    }
+    payload = {
+        "schema_version": 2,
         "issue": 101,
-        "published_files": {
-            "results.json": sha256_of_file(results_path),
-            "REPORT.md": sha256_of_file(report_path),
-        },
+        "issue_completion": "partial",
+        "metadata": metadata,
+        "parity": parity,
+        "probes": probes,
+        "independent_diagnostics": measure_boundary_diagnostics(
+            tok, [FIXTURES["medium"]] * 32, args.warmup, args.repetitions
+        ),
+        "macrobenchmarks": run_macrobenchmark_matrix(tok, args.warmup, args.repetitions),
+        "process_peak_rss_bytes": peak_rss(),
     }
-    manifest_path = out_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Wrote manifest to {manifest_path}")
-
-    print("\nStudy receipts published successfully.")
+    publish(payload, args.output)
+    print(f"Wrote verified synthetic diagnostics to {args.output}")
 
 
 if __name__ == "__main__":

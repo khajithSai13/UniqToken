@@ -189,6 +189,8 @@ class CustomTokenizer:
     def _requires_python_security(text: str) -> bool:
         if not native_text_supported(text) or "\ue000" in text or "\ue001" in text:
             return True
+        # NFKC sources of ASCII '<' and '|'; exhaustive Unicode tests pin this
+        # necessary condition before the unchanged normalized marker check.
         if ("<" in text or "\ufe64" in text or "\uff1c" in text) and ("|" in text or "\uff5c" in text):
             return "<|" in unicodedata.normalize("NFKC", text)
         return False
