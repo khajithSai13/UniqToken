@@ -1,0 +1,1290 @@
+{
+  "schema_version": 2,
+  "issue": 101,
+  "issue_completion": "partial",
+  "metadata": {
+    "git_commit": "a7594049934093d6b28ac3ff66dac26281f69b8a",
+    "git_tree": "8991871307116ff1c352260a9af04c3e08a4fb0c",
+    "tracked_tree_clean": true,
+    "source_sha256": {
+      "benchmarks/profile_boundary_overhead.py": "4c70112bdf05d352cd5d3181ffdd38938ca1519b5e7075e31debe4b1313001af",
+      "benchmarks/profile_hot_paths.py": "45414936e7b7b028857aec5ef5e60e20f27194b7a488154cbb3cf6f1667af9c8",
+      "benchmarks/profile_residual_native.py": "c6de44939874160947b085f43e28c63c51e397f8113c2c2c4cb03bec00f2dd86",
+      "uniqtoken/_native.py": "f75677ea8d99f07a8f15dd2c04de9b1b978b6e9b1207454716a11692942a0427",
+      "uniqtoken/tokenizer.py": "0f9b92f334e403bfbe4c49a3ce9d81ec028507d2ee5a0b1adee0590855981660"
+    },
+    "native_sha256": "e56883b67e9bb085d6b9206d7c47cf98e239d483b2275282fefea2543f55d87e",
+    "native_filename": "uniqtoken_core.pyd",
+    "model_sha256": "e53620eb23ce44a930b0679562252a6386ec793dd20c52322f5564bba26e381f",
+    "fixture_sha256": "e55caa2429f1f52cbefe23a963d12dc5ea5d0b1203cad82d2ae22faee13f82d5",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "logical_cpu_count": 16,
+    "physical_cpu_count": null,
+    "ram_bytes": null,
+    "python": "3.10.11",
+    "unicode": "13.0.0",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "build_mode": "release",
+    "rayon_threads": 1,
+    "warmup": 3,
+    "repetitions": 11,
+    "iterations": 5,
+    "utc_time": "2026-10-07T10:50:27.572354+00:00"
+  },
+  "parity": [
+    {
+      "name": "short",
+      "input_sha256": "e28a5b14d8cebb85821eb0c25b561bf07c36b01bb202059399df7a162bf33736",
+      "output_sha256": "60be48198a530f8a3144cbad95eae6b7bf3e5121492af5a4a18869d7a28da48d"
+    },
+    {
+      "name": "medium",
+      "input_sha256": "e5d4331e49306aa9d4ec023f5ef893ebce6ac5b97a9bbe780f4b54223b446abc",
+      "output_sha256": "8fd4b1169e4bb7b5aecd730b7bff4bd5b1525e285405ca9ac2c8adb64afae853"
+    },
+    {
+      "name": "long",
+      "input_sha256": "b44676c4b24f127c02d9ed79036cef7d480bcbb196ae395273206386235f62a2",
+      "output_sha256": "394408e4102f5704966e038791a26f5fd1b885e0687f0cbef946982d0665c96e"
+    },
+    {
+      "name": "multilingual",
+      "input_sha256": "c36acf79565873628bf7f7609c16952b31d7eea7bbe6e7cd6daf529149f70f36",
+      "output_sha256": "704ca3099a27e55479e1dad4e127340088e015b11a54e8f556d1dbc3e543da00"
+    },
+    {
+      "name": "source_code",
+      "input_sha256": "95824159d83ceba0716db9c9647a7886e96104ff3191d4a3931bea23eabd1ad2",
+      "output_sha256": "0965c77465247571f2a30ad5d4c13a1b25253b975376e3d5578f7fa9e2064556"
+    },
+    {
+      "name": "security_0_escape",
+      "input_sha256": "b487bdf61fc8ed41da9b997e614ed6807122c3df76b83f2abf9fcdc215a3b784",
+      "output_sha256": "2324360c053ac21c93427ce4f4b957cd0444c557e2f2ec2265a61445aa1b41ab"
+    },
+    {
+      "name": "security_0_raise",
+      "input_sha256": "b487bdf61fc8ed41da9b997e614ed6807122c3df76b83f2abf9fcdc215a3b784",
+      "output_sha256": "283a486ab7397f525ad277dd92569b54975c8ef0c7815816bb9952974853aed8"
+    },
+    {
+      "name": "security_0_ignore",
+      "input_sha256": "b487bdf61fc8ed41da9b997e614ed6807122c3df76b83f2abf9fcdc215a3b784",
+      "output_sha256": "1bd5812632bd384a6f967ffb4abf0f7a4fe82b2c027d3d803554838486bfba2e"
+    },
+    {
+      "name": "security_0_allowed",
+      "input_sha256": "b487bdf61fc8ed41da9b997e614ed6807122c3df76b83f2abf9fcdc215a3b784",
+      "output_sha256": "a0fb92f07c588a593bd68b3291f80107c896cfa56016f9acc5768cc13aef192d"
+    },
+    {
+      "name": "security_1_escape",
+      "input_sha256": "d9e21980ade0eea8efe2a0cc5523c148d98d637f738b02fa7a349df57c3558bd",
+      "output_sha256": "6c311eb57f731470ecea0d34751e5b476f599454cecf63e046175b5cb3abcc4b"
+    },
+    {
+      "name": "security_1_raise",
+      "input_sha256": "d9e21980ade0eea8efe2a0cc5523c148d98d637f738b02fa7a349df57c3558bd",
+      "output_sha256": "283a486ab7397f525ad277dd92569b54975c8ef0c7815816bb9952974853aed8"
+    },
+    {
+      "name": "security_1_ignore",
+      "input_sha256": "d9e21980ade0eea8efe2a0cc5523c148d98d637f738b02fa7a349df57c3558bd",
+      "output_sha256": "9ca727d035dd08060ce89e26ecb1059d490913cf989c912934c4cc653dcbf1a0"
+    },
+    {
+      "name": "security_1_allowed",
+      "input_sha256": "d9e21980ade0eea8efe2a0cc5523c148d98d637f738b02fa7a349df57c3558bd",
+      "output_sha256": "c2fd10086a041de701759176b55693b0071908a9d5255ceed3174579e288658c"
+    },
+    {
+      "name": "security_2_escape",
+      "input_sha256": "05ab4202cb2d11d0027f7e64234721c0b6cde7a007c1cdf5ed0761165c26556d",
+      "output_sha256": "308a7a5869efee562c35f68595958570d33c3622c5d00de812e35e937e3d2c3b"
+    },
+    {
+      "name": "security_2_raise",
+      "input_sha256": "05ab4202cb2d11d0027f7e64234721c0b6cde7a007c1cdf5ed0761165c26556d",
+      "output_sha256": "308a7a5869efee562c35f68595958570d33c3622c5d00de812e35e937e3d2c3b"
+    },
+    {
+      "name": "security_2_ignore",
+      "input_sha256": "05ab4202cb2d11d0027f7e64234721c0b6cde7a007c1cdf5ed0761165c26556d",
+      "output_sha256": "308a7a5869efee562c35f68595958570d33c3622c5d00de812e35e937e3d2c3b"
+    },
+    {
+      "name": "security_2_allowed",
+      "input_sha256": "05ab4202cb2d11d0027f7e64234721c0b6cde7a007c1cdf5ed0761165c26556d",
+      "output_sha256": "308a7a5869efee562c35f68595958570d33c3622c5d00de812e35e937e3d2c3b"
+    },
+    {
+      "name": "security_3_escape",
+      "input_sha256": "4a56f1cd5a9fa607147db0445071293f7bcacd6134b5faefa2000317b84b04d8",
+      "output_sha256": "1fc27ec9beeee83369f1bf0fbf963fdfdb2c48d9cf59c72d73ae771a72199cbe"
+    },
+    {
+      "name": "security_3_raise",
+      "input_sha256": "4a56f1cd5a9fa607147db0445071293f7bcacd6134b5faefa2000317b84b04d8",
+      "output_sha256": "1fc27ec9beeee83369f1bf0fbf963fdfdb2c48d9cf59c72d73ae771a72199cbe"
+    },
+    {
+      "name": "security_3_ignore",
+      "input_sha256": "4a56f1cd5a9fa607147db0445071293f7bcacd6134b5faefa2000317b84b04d8",
+      "output_sha256": "1fc27ec9beeee83369f1bf0fbf963fdfdb2c48d9cf59c72d73ae771a72199cbe"
+    },
+    {
+      "name": "security_3_allowed",
+      "input_sha256": "4a56f1cd5a9fa607147db0445071293f7bcacd6134b5faefa2000317b84b04d8",
+      "output_sha256": "1fc27ec9beeee83369f1bf0fbf963fdfdb2c48d9cf59c72d73ae771a72199cbe"
+    },
+    {
+      "name": "security_4_escape",
+      "input_sha256": "bbcfc169adf38915c0e5beb4477ef49fe565f30fb9daf6510ed6cc943fae36a8",
+      "output_sha256": "1be2a202b4d888014d0c058649a7bb67e4a6476885aa9f307b4a6b51c5ffa3f4"
+    },
+    {
+      "name": "security_4_raise",
+      "input_sha256": "bbcfc169adf38915c0e5beb4477ef49fe565f30fb9daf6510ed6cc943fae36a8",
+      "output_sha256": "1be2a202b4d888014d0c058649a7bb67e4a6476885aa9f307b4a6b51c5ffa3f4"
+    },
+    {
+      "name": "security_4_ignore",
+      "input_sha256": "bbcfc169adf38915c0e5beb4477ef49fe565f30fb9daf6510ed6cc943fae36a8",
+      "output_sha256": "1be2a202b4d888014d0c058649a7bb67e4a6476885aa9f307b4a6b51c5ffa3f4"
+    },
+    {
+      "name": "security_4_allowed",
+      "input_sha256": "bbcfc169adf38915c0e5beb4477ef49fe565f30fb9daf6510ed6cc943fae36a8",
+      "output_sha256": "1be2a202b4d888014d0c058649a7bb67e4a6476885aa9f307b4a6b51c5ffa3f4"
+    },
+    {
+      "name": "security_5_escape",
+      "input_sha256": "98cc986ef9247dfaf6c261b1975b4a01010cbd19c2d2679fc85d4a9a3135ab10",
+      "output_sha256": "2c0951a4edcc120814f75d08f1c7a5e16624c411d2e93f0f49c57ffea10e30e5"
+    },
+    {
+      "name": "security_5_raise",
+      "input_sha256": "98cc986ef9247dfaf6c261b1975b4a01010cbd19c2d2679fc85d4a9a3135ab10",
+      "output_sha256": "2c0951a4edcc120814f75d08f1c7a5e16624c411d2e93f0f49c57ffea10e30e5"
+    },
+    {
+      "name": "security_5_ignore",
+      "input_sha256": "98cc986ef9247dfaf6c261b1975b4a01010cbd19c2d2679fc85d4a9a3135ab10",
+      "output_sha256": "2c0951a4edcc120814f75d08f1c7a5e16624c411d2e93f0f49c57ffea10e30e5"
+    },
+    {
+      "name": "security_5_allowed",
+      "input_sha256": "98cc986ef9247dfaf6c261b1975b4a01010cbd19c2d2679fc85d4a9a3135ab10",
+      "output_sha256": "2c0951a4edcc120814f75d08f1c7a5e16624c411d2e93f0f49c57ffea10e30e5"
+    }
+  ],
+  "probes": {
+    "python_support_checks": {
+      "baseline": {
+        "description": "Python surrogate-support check; no Rust UTF-8 access",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            8.783,
+            8.4585,
+            7.948,
+            7.4513,
+            8.4632,
+            8.651,
+            8.6793,
+            8.1974,
+            8.3419,
+            8.8962,
+            8.2902
+          ],
+          "p50_ms": 8.4585,
+          "p95_ms": 8.8962
+        },
+        "memory": {
+          "retained_bytes": 256,
+          "peak_bytes": 744,
+          "scope": "Python traced heap only"
+        }
+      },
+      "optimized": {
+        "description": "Python surrogate-support check; no Rust UTF-8 access",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0124,
+            0.0111,
+            0.0106,
+            0.0105,
+            0.0105,
+            0.0112,
+            0.0107,
+            0.0106,
+            0.0107,
+            0.0106,
+            0.0104
+          ],
+          "p50_ms": 0.0106,
+          "p95_ms": 0.0124
+        },
+        "memory": {
+          "retained_bytes": 256,
+          "peak_bytes": 448,
+          "scope": "Python traced heap only"
+        }
+      }
+    },
+    "python_list_copies": {
+      "ids_64": {
+        "description": "Shallow Python list copy of existing int references; no Rust integer conversion",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0018,
+            0.0019,
+            0.0013,
+            0.0013,
+            0.0013,
+            0.0014,
+            0.0013,
+            0.0013,
+            0.0012,
+            0.0014,
+            0.0013
+          ],
+          "p50_ms": 0.0013,
+          "p95_ms": 0.0019
+        },
+        "memory": {
+          "retained_bytes": 568,
+          "peak_bytes": 568,
+          "scope": "Python traced heap only"
+        }
+      },
+      "ids_512": {
+        "description": "Shallow Python list copy of existing int references; no Rust integer conversion",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0046,
+            0.0047,
+            0.0044,
+            0.0044,
+            0.0044,
+            0.0046,
+            0.0043,
+            0.0041,
+            0.0044,
+            0.0044,
+            0.0043
+          ],
+          "p50_ms": 0.0044,
+          "p95_ms": 0.0047
+        },
+        "memory": {
+          "retained_bytes": 4152,
+          "peak_bytes": 4152,
+          "scope": "Python traced heap only"
+        }
+      },
+      "ids_4096": {
+        "description": "Shallow Python list copy of existing int references; no Rust integer conversion",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0318,
+            0.0318,
+            0.0319,
+            0.0314,
+            0.0311,
+            0.032,
+            0.0316,
+            0.0314,
+            0.0316,
+            0.0316,
+            0.0317
+          ],
+          "p50_ms": 0.0316,
+          "p95_ms": 0.032
+        },
+        "memory": {
+          "retained_bytes": 32824,
+          "peak_bytes": 32824,
+          "scope": "Python traced heap only"
+        }
+      }
+    },
+    "python_nested_lists": {
+      "batch_1": {
+        "description": "Python nested lists of existing int references; no native output materialization",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.006,
+            0.0056,
+            0.0056,
+            0.0056,
+            0.0055,
+            0.0053,
+            0.0055,
+            0.0054,
+            0.0055,
+            0.0054,
+            0.0053
+          ],
+          "p50_ms": 0.0055,
+          "p95_ms": 0.006
+        },
+        "memory": {
+          "retained_bytes": 4184,
+          "peak_bytes": 4360,
+          "scope": "Python traced heap only"
+        }
+      },
+      "batch_8": {
+        "description": "Python nested lists of existing int references; no native output materialization",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0263,
+            0.0263,
+            0.0263,
+            0.027,
+            0.0265,
+            0.0263,
+            0.0263,
+            0.0263,
+            0.0262,
+            0.0266,
+            0.0267
+          ],
+          "p50_ms": 0.0263,
+          "p95_ms": 0.027
+        },
+        "memory": {
+          "retained_bytes": 33280,
+          "peak_bytes": 33456,
+          "scope": "Python traced heap only"
+        }
+      },
+      "batch_32": {
+        "description": "Python nested lists of existing int references; no native output materialization",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.0953,
+            0.0949,
+            0.0947,
+            0.095,
+            0.0963,
+            0.0957,
+            0.0965,
+            0.095,
+            0.0954,
+            0.0954,
+            0.0952
+          ],
+          "p50_ms": 0.0953,
+          "p95_ms": 0.0965
+        },
+        "memory": {
+          "retained_bytes": 133120,
+          "peak_bytes": 133296,
+          "scope": "Python traced heap only"
+        }
+      },
+      "batch_128": {
+        "description": "Python nested lists of existing int references; no native output materialization",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.3911,
+            0.473,
+            0.4151,
+            0.3826,
+            0.3801,
+            0.3772,
+            0.4314,
+            0.3768,
+            0.3763,
+            0.4029,
+            0.3748
+          ],
+          "p50_ms": 0.3826,
+          "p95_ms": 0.473
+        },
+        "memory": {
+          "retained_bytes": 532480,
+          "peak_bytes": 532656,
+          "scope": "Python traced heap only"
+        }
+      }
+    },
+    "python_objects": {
+      "ints": {
+        "description": "Python int creation",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.3907,
+            0.9143,
+            0.3736,
+            0.7542,
+            0.3659,
+            0.3576,
+            0.4713,
+            0.3819,
+            0.3836,
+            0.3535,
+            0.3777
+          ],
+          "p50_ms": 0.3819,
+          "p95_ms": 0.9143
+        },
+        "memory": {
+          "retained_bytes": 29604,
+          "peak_bytes": 29864,
+          "scope": "Python traced heap only"
+        }
+      },
+      "strings": {
+        "description": "Python string creation",
+        "scope": "Python-only diagnostic",
+        "native_calls": 0,
+        "copied_native_bytes": null,
+        "latency": {
+          "samples_ms": [
+            0.5589,
+            0.1859,
+            0.2219,
+            0.2024,
+            0.2206,
+            0.1997,
+            0.196,
+            0.1967,
+            0.1965,
+            0.2139,
+            0.2018
+          ],
+          "p50_ms": 0.2018,
+          "p95_ms": 0.5589
+        },
+        "memory": {
+          "retained_bytes": 60690,
+          "peak_bytes": 60926,
+          "scope": "Python traced heap only"
+        }
+      }
+    },
+    "native_single_vs_batch": {
+      "iterative": {
+        "native_calls": {
+          "rust_encode_text_native_ids": 32
+        },
+        "latency": {
+          "samples_ms": [
+            74.5132,
+            74.9594,
+            77.427,
+            75.2503,
+            73.121,
+            73.3997,
+            75.3652,
+            74.7272,
+            98.9071,
+            79.3643,
+            106.5916
+          ],
+          "p50_ms": 75.2503,
+          "p95_ms": 106.5916
+        },
+        "memory": {
+          "retained_bytes": 181120,
+          "peak_bytes": 181984,
+          "scope": "Python traced heap only"
+        },
+        "copied_native_bytes": null
+      },
+      "batch": {
+        "native_calls": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "latency": {
+          "samples_ms": [
+            73.2433,
+            74.2118,
+            80.345,
+            83.3117,
+            76.1573,
+            79.429,
+            76.1676,
+            81.0229,
+            73.0218,
+            73.4093,
+            70.3987
+          ],
+          "p50_ms": 76.1573,
+          "p95_ms": 83.3117
+        },
+        "memory": {
+          "retained_bytes": 181120,
+          "peak_bytes": 181992,
+          "scope": "Python traced heap only"
+        },
+        "copied_native_bytes": null
+      }
+    }
+  },
+  "independent_diagnostics": {
+    "scope": "independent operations; timings are not additive stages",
+    "public_ids_batch": {
+      "samples_ms": [
+        74.1027,
+        81.2442,
+        73.752,
+        66.2777,
+        71.7561,
+        77.7404,
+        72.2617,
+        71.4756,
+        86.5139,
+        75.071,
+        77.8858
+      ],
+      "p50_ms": 74.1027,
+      "p95_ms": 86.5139
+    },
+    "python_security_checks": {
+      "samples_ms": [
+        0.0361,
+        0.0338,
+        0.0341,
+        0.0312,
+        0.0321,
+        0.0357,
+        0.0354,
+        0.0352,
+        0.0351,
+        0.0359,
+        0.0359
+      ],
+      "p50_ms": 0.0352,
+      "p95_ms": 0.0361
+    },
+    "native_compute_ms": null,
+    "native_materialization_ms": null
+  },
+  "macrobenchmarks": [
+    {
+      "workload": "short_single",
+      "batch_size": 1,
+      "normalized_utf8_bytes": 60,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            0.11464,
+            0.10042,
+            0.11396,
+            0.15146,
+            0.15908,
+            0.11736,
+            0.10564,
+            0.10456,
+            0.11644,
+            0.10504,
+            0.12286
+          ],
+          "p50_ms": 0.11464,
+          "p95_ms": 0.15908,
+          "normalized_MB_per_s": 0.52337752965806
+        },
+        "optimized": {
+          "samples_ms": [
+            0.07752,
+            0.0746,
+            0.07362,
+            0.07384,
+            0.09138,
+            0.07244,
+            0.08192,
+            0.07432,
+            0.08284,
+            0.07608,
+            0.09264
+          ],
+          "p50_ms": 0.07608,
+          "p95_ms": 0.09264,
+          "normalized_MB_per_s": 0.7886435331230284
+        }
+      },
+      "paired_speed_ratio": 1.4068891280947255,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.346112600536193,
+        1.620099392600773
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 360,
+          "peak_bytes": 1032,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 360,
+          "peak_bytes": 1032,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "870adb4e3a0e6bd5cdb7713be0a606c631f234b102151305094a46209cc72eb0"
+    },
+    {
+      "workload": "short_batch",
+      "batch_size": 32,
+      "normalized_utf8_bytes": 2080,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            2.04248,
+            2.62874,
+            2.3575,
+            2.16854,
+            2.19726,
+            2.14796,
+            1.79886,
+            2.5181,
+            2.0014,
+            1.88316,
+            1.89786
+          ],
+          "p50_ms": 2.14796,
+          "p95_ms": 2.62874,
+          "normalized_MB_per_s": 0.9683606771075812
+        },
+        "optimized": {
+          "samples_ms": [
+            1.51602,
+            1.53912,
+            1.65752,
+            1.73446,
+            1.80158,
+            2.03544,
+            1.54096,
+            1.56126,
+            1.58864,
+            1.43036,
+            1.58714
+          ],
+          "p50_ms": 1.58714,
+          "p95_ms": 2.03544,
+          "normalized_MB_per_s": 1.310533412301372
+        }
+      },
+      "paired_speed_ratio": 1.2598197200120858,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.1957735297453282,
+        1.4223056132052705
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids_batch": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 14448,
+          "peak_bytes": 15320,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 14448,
+          "peak_bytes": 15320,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "13b531fb377e3f272aaf9b1c2b0cda98f53ae947e5f6dcbc7225e26adb69df79"
+    },
+    {
+      "workload": "medium_single",
+      "batch_size": 1,
+      "normalized_utf8_bytes": 1260,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            2.97156,
+            2.7362,
+            2.7173,
+            2.82184,
+            2.96738,
+            2.48146,
+            3.15842,
+            2.32692,
+            2.71442,
+            2.40468,
+            2.53966
+          ],
+          "p50_ms": 2.7173,
+          "p95_ms": 3.15842,
+          "normalized_MB_per_s": 0.4636955801714938
+        },
+        "optimized": {
+          "samples_ms": [
+            2.59328,
+            2.57658,
+            2.93058,
+            2.5195,
+            2.36136,
+            2.47272,
+            2.78586,
+            2.8026,
+            2.49676,
+            2.49062,
+            2.17648
+          ],
+          "p50_ms": 2.5195,
+          "p95_ms": 2.93058,
+          "normalized_MB_per_s": 0.5000992260369121
+        }
+      },
+      "paired_speed_ratio": 1.0871769813678527,
+      "paired_ratio_95pct_bootstrap_interval": [
+        0.9654945354971854,
+        1.1458693237907207
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 5652,
+          "peak_bytes": 6324,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 5652,
+          "peak_bytes": 6324,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "fc3b9bebd202b9d4256b4edb79178f65df23df33205281a6f0b3b1a12c6c7970"
+    },
+    {
+      "workload": "medium_batch",
+      "batch_size": 32,
+      "normalized_utf8_bytes": 40480,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            74.24646,
+            74.53236,
+            74.443,
+            74.15078,
+            68.98374,
+            71.143,
+            74.59162,
+            73.26214,
+            74.42456,
+            72.87582,
+            72.63048
+          ],
+          "p50_ms": 74.15078,
+          "p95_ms": 74.59162,
+          "normalized_MB_per_s": 0.545914688962139
+        },
+        "optimized": {
+          "samples_ms": [
+            63.20294,
+            62.8867,
+            65.11464,
+            65.78008,
+            63.02932,
+            65.29994,
+            65.25734,
+            65.10002,
+            63.09904,
+            61.40344,
+            65.81318
+          ],
+          "p50_ms": 65.10002,
+          "p95_ms": 65.81318,
+          "normalized_MB_per_s": 0.6218124049731475
+        }
+      },
+      "paired_speed_ratio": 1.143038009210918,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.1035856343668549,
+        1.179487992210341
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids_batch": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 183792,
+          "peak_bytes": 184664,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 183792,
+          "peak_bytes": 184664,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "b1f9ca4d8ab2c515ee7d329900801f9a628cdc9ae49924dc0d98cf37bbdd8a29"
+    },
+    {
+      "workload": "long_single",
+      "batch_size": 1,
+      "normalized_utf8_bytes": 5940,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            7.51562,
+            7.22612,
+            7.15894,
+            7.25398,
+            7.13134,
+            7.5939,
+            7.40066,
+            7.27034,
+            7.595,
+            7.59476,
+            7.33034
+          ],
+          "p50_ms": 7.33034,
+          "p95_ms": 7.595,
+          "normalized_MB_per_s": 0.8103307622838778
+        },
+        "optimized": {
+          "samples_ms": [
+            6.13368,
+            5.88116,
+            6.06406,
+            5.97814,
+            5.9979,
+            5.9987,
+            6.14838,
+            5.96272,
+            5.96152,
+            6.0656,
+            5.99148
+          ],
+          "p50_ms": 5.9979,
+          "p95_ms": 6.14838,
+          "normalized_MB_per_s": 0.9903466213174612
+        }
+      },
+      "paired_speed_ratio": 1.223460647452716,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.2036764155761355,
+        1.252103666578739
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 23796,
+          "peak_bytes": 24468,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 23796,
+          "peak_bytes": 24468,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "e7f2ca47a4dee20bff1677563501e14bee90ba97720d6e153dcb89fae08fee2a"
+    },
+    {
+      "workload": "long_batch",
+      "batch_size": 32,
+      "normalized_utf8_bytes": 190240,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            241.18964,
+            214.03766,
+            236.59324,
+            224.68048,
+            242.884,
+            222.75492,
+            219.612,
+            235.34608,
+            233.1745,
+            236.80088,
+            233.45522
+          ],
+          "p50_ms": 233.45522,
+          "p95_ms": 242.884,
+          "normalized_MB_per_s": 0.8148886111863337
+        },
+        "optimized": {
+          "samples_ms": [
+            183.40566,
+            194.7471,
+            185.34046,
+            198.43614,
+            193.87,
+            184.72362,
+            174.51638,
+            185.95456,
+            192.26142,
+            191.1192,
+            195.00392
+          ],
+          "p50_ms": 191.1192,
+          "p95_ms": 198.43614,
+          "normalized_MB_per_s": 0.9953997295928405
+        }
+      },
+      "paired_speed_ratio": 1.2390219297694842,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.19718218997854,
+        1.2656106954301094
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids_batch": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 764400,
+          "peak_bytes": 765272,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 764400,
+          "peak_bytes": 765272,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "80760581680ebf1ec4e1b6347711edfde1d00fafd0ddbf0592436ebe3851af13"
+    },
+    {
+      "workload": "multilingual_single",
+      "batch_size": 1,
+      "normalized_utf8_bytes": 948,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            2.64474,
+            1.28672,
+            1.24718,
+            2.66024,
+            2.70702,
+            2.60634,
+            2.57646,
+            1.28124,
+            1.22058,
+            2.03172,
+            2.03728
+          ],
+          "p50_ms": 2.03728,
+          "p95_ms": 2.70702,
+          "normalized_MB_per_s": 0.465326317442865
+        },
+        "optimized": {
+          "samples_ms": [
+            2.44378,
+            2.29064,
+            1.24594,
+            2.11858,
+            2.59558,
+            2.81062,
+            1.55614,
+            1.2189,
+            1.86202,
+            2.54224,
+            1.70792
+          ],
+          "p50_ms": 2.11858,
+          "p95_ms": 2.81062,
+          "normalized_MB_per_s": 0.4474695314786319
+        }
+      },
+      "paired_speed_ratio": 1.0429345271577066,
+      "paired_ratio_95pct_bootstrap_interval": [
+        0.7991849707344704,
+        1.1928427561009882
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 4356,
+          "peak_bytes": 5028,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 4356,
+          "peak_bytes": 5028,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "c82807c25d510837c1eb142932ebbd69bde287cded4322612272aff0526b4e79"
+    },
+    {
+      "workload": "multilingual_batch",
+      "batch_size": 32,
+      "normalized_utf8_bytes": 30496,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            79.30822,
+            55.0291,
+            81.9116,
+            66.76632,
+            81.42716,
+            79.06382,
+            85.75884,
+            81.26826,
+            82.94932,
+            81.53756,
+            70.77142
+          ],
+          "p50_ms": 81.26826,
+          "p95_ms": 85.75884,
+          "normalized_MB_per_s": 0.3752510512714312
+        },
+        "optimized": {
+          "samples_ms": [
+            80.15256,
+            52.879,
+            78.2719,
+            64.65,
+            80.55168,
+            79.64996,
+            80.6502,
+            80.5588,
+            72.7798,
+            79.41558,
+            78.77056
+          ],
+          "p50_ms": 79.41558,
+          "p95_ms": 80.6502,
+          "normalized_MB_per_s": 0.384005254384593
+        }
+      },
+      "paired_speed_ratio": 1.0267199458846739,
+      "paired_ratio_95pct_bootstrap_interval": [
+        0.9926410509182931,
+        1.0465007237591013
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids_batch": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 142320,
+          "peak_bytes": 143192,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 142320,
+          "peak_bytes": 143192,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "880be7c234e23fe06cbe116419f0e22d3b19873037519a45c4c69bc14601b9b5"
+    },
+    {
+      "workload": "source_code_single",
+      "batch_size": 1,
+      "normalized_utf8_bytes": 1310,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            3.386,
+            3.54052,
+            3.31454,
+            3.47074,
+            3.60968,
+            3.46142,
+            3.78926,
+            3.67088,
+            3.6776,
+            3.46514,
+            3.42906
+          ],
+          "p50_ms": 3.47074,
+          "p95_ms": 3.78926,
+          "normalized_MB_per_s": 0.3774411220661876
+        },
+        "optimized": {
+          "samples_ms": [
+            3.08214,
+            3.04628,
+            2.99356,
+            2.95138,
+            3.39196,
+            3.37852,
+            3.373,
+            3.3796,
+            3.2885,
+            6.08394,
+            3.01406
+          ],
+          "p50_ms": 3.2885,
+          "p95_ms": 6.08394,
+          "normalized_MB_per_s": 0.39835791394252695
+        }
+      },
+      "paired_speed_ratio": 1.1072235064605354,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.0641870776778029,
+        1.1376880354073906
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 15840,
+          "peak_bytes": 16512,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 15840,
+          "peak_bytes": 16512,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "4d08c2e41d1731dfcb6d44465cecd3c975a5891a7b3482f8d7f348ce881492fc"
+    },
+    {
+      "workload": "source_code_batch",
+      "batch_size": 32,
+      "normalized_utf8_bytes": 42080,
+      "latency": {
+        "baseline": {
+          "samples_ms": [
+            101.1446,
+            102.04276,
+            105.7285,
+            103.3057,
+            102.7013,
+            105.87288,
+            101.67636,
+            104.92332,
+            103.2961,
+            105.78868,
+            99.64344
+          ],
+          "p50_ms": 103.2961,
+          "p95_ms": 105.87288,
+          "normalized_MB_per_s": 0.4073725919952448
+        },
+        "optimized": {
+          "samples_ms": [
+            96.00764,
+            94.86584,
+            97.02374,
+            95.26578,
+            93.6497,
+            93.56172,
+            86.88894,
+            92.69172,
+            94.18988,
+            95.17822,
+            94.60772
+          ],
+          "p50_ms": 94.60772,
+          "p95_ms": 97.02374,
+          "normalized_MB_per_s": 0.4447839985996914
+        }
+      },
+      "paired_speed_ratio": 1.09665380668598,
+      "paired_ratio_95pct_bootstrap_interval": [
+        1.0756533647939026,
+        1.1315833013758192
+      ],
+      "native_calls": {
+        "baseline": {
+          "rust_encode_text_native_ids_batch": 1
+        },
+        "optimized": {
+          "rust_encode_text_native_ids_batch": 1
+        }
+      },
+      "python_memory": {
+        "baseline": {
+          "retained_bytes": 509808,
+          "peak_bytes": 510680,
+          "scope": "Python traced heap only"
+        },
+        "optimized": {
+          "retained_bytes": 509808,
+          "peak_bytes": 510680,
+          "scope": "Python traced heap only"
+        }
+      },
+      "output_sha256": "bc616c3d736d9af8204021a9cf61cf97d25d379e7f63dad9ff0e2d354951dd35"
+    }
+  ],
+  "process_peak_rss_bytes": 231780352
+}

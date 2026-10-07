@@ -4,6 +4,8 @@ import logging
 
 
 def native_text_supported(text):
+    if text.isascii():
+        return True
     if any(0xD800 <= ord(char) <= 0xDFFF for char in text):
         logging.getLogger("uniqtoken.native").warning(
             "lone surrogate cannot cross the UTF-8 native boundary; using Python implementation"
