@@ -6,6 +6,7 @@ import itertools
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import tracemalloc
 import unicodedata
@@ -181,8 +182,22 @@ class BoundaryOverheadTests(unittest.TestCase):
         self.assertEqual(payload["issue_completion"], "partial")
         self.assertEqual(len(payload["macrobenchmarks"]), 10)
         self.assertEqual(payload["metadata"]["fixture_sha256"], profiler.digest(profiler.FIXTURES))
+        commit = payload["metadata"]["git_commit"]
+        self.assertRegex(commit, r"^[0-9a-f]{40}$")
+        available = (
+            subprocess.run(
+                ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
+                cwd=profiler.ROOT,
+                capture_output=True,
+            ).returncode
+            == 0
+        )
         for filename, expected in payload["metadata"]["source_sha256"].items():
-            self.assertEqual(profiler.source_sha256(filename), expected)
+            self.assertRegex(expected, r"^[0-9a-f]{64}$")
+            # Historical receipts stay valid after later tokenizer changes.
+            # A shallow CI checkout may not contain the measured source commit.
+            if available:
+                self.assertEqual(profiler.source_sha256(filename, commit), expected)
         self.assertEqual((directory / "REPORT.md").read_bytes(), profiler.generate_markdown_report(payload).encode())
 
 

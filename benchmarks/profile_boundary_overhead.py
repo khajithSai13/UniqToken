@@ -52,9 +52,9 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 
 
-def source_sha256(filename):
+def source_sha256(filename, revision="HEAD"):
     """Hash committed blobs so checkout newline conversion cannot alter receipts."""
-    blob = subprocess.check_output(["git", "show", f"HEAD:{filename}"], cwd=ROOT)
+    blob = subprocess.check_output(["git", "show", f"{revision}:{filename}"], cwd=ROOT)
     return hashlib.sha256(blob).hexdigest()
 
 
