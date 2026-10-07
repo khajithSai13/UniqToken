@@ -182,7 +182,7 @@ class BoundaryOverheadTests(unittest.TestCase):
         self.assertEqual(len(payload["macrobenchmarks"]), 10)
         self.assertEqual(payload["metadata"]["fixture_sha256"], profiler.digest(profiler.FIXTURES))
         for filename, expected in payload["metadata"]["source_sha256"].items():
-            self.assertEqual(profiler.sha256(profiler.ROOT / filename), expected)
+            self.assertEqual(profiler.source_sha256(filename), expected)
         self.assertEqual((directory / "REPORT.md").read_bytes(), profiler.generate_markdown_report(payload).encode())
 
 

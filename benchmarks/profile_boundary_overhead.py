@@ -20,6 +20,7 @@ from pathlib import Path
 import platform
 import random
 import statistics
+import subprocess
 import sys
 import time
 import tracemalloc
@@ -49,6 +50,12 @@ ITERATIONS = 5
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+
+
+def source_sha256(filename):
+    """Hash committed blobs so checkout newline conversion cannot alter receipts."""
+    blob = subprocess.check_output(["git", "show", f"HEAD:{filename}"], cwd=ROOT)
+    return hashlib.sha256(blob).hexdigest()
 
 
 def baseline_native_text_supported(text):
@@ -458,7 +465,7 @@ def main():
         "git_tree": git_value("rev-parse", "HEAD^{tree}"),
         "tracked_tree_clean": True,
         "source_sha256": {
-            name: sha256(ROOT / name)
+            name: source_sha256(name)
             for name in (
                 "benchmarks/profile_boundary_overhead.py",
                 "benchmarks/profile_hot_paths.py",
