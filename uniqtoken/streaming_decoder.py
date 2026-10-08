@@ -5,6 +5,9 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 
+from .byte_codec import BYTE_TOKEN_TO_VAL
+
+
 class StreamingDecoder:
     """
     Incremental Streaming Decoder with UTF-8 Byte Accumulation.
@@ -51,6 +54,9 @@ class StreamingDecoder:
             return text
 
         prefix, escaped_metaspace = self.metaspace_escape
+        if prefix not in text and not self._pending_escape:
+            return text
+
         text = self._pending_escape + text
         self._pending_escape = ""
         output: List[str] = []
@@ -91,9 +97,10 @@ class StreamingDecoder:
         ):
             return ""
 
-        match = self.BYTE_TOKEN_PATTERN.match(token)
-        if match:
-            byte_val = int(match.group(1), 16)
+        byte_val = None
+        if len(token) == 6 and token.startswith("<0x") and token.endswith(">"):
+            byte_val = BYTE_TOKEN_TO_VAL.get(token)
+        if byte_val is not None:
             # Feed one byte; the incremental decoder returns any complete
             # text and retains a genuinely incomplete trailing partial. A
             # strict decoder raises only on an *invalid* (not merely

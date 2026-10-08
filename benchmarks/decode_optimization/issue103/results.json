@@ -1,0 +1,488 @@
+{
+  "issue": 103,
+  "timestamp": "2026-10-08T04:47:35Z",
+  "topology": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "python_version": "3.13.1",
+    "physical_cores": 8,
+    "logical_cores": 12,
+    "total_ram_gb": 7.65
+  },
+  "dimensions": {
+    "dim_1_token_id_lookup": {
+      "lenient_lookup": {
+        "dimension": "dim_1_token_id_lookup",
+        "description": "Lenient ID-to-token lookup (.get with unk fallback)",
+        "call_count": 157,
+        "p50_latency_ms": 0.007122,
+        "p95_latency_ms": 0.013714,
+        "throughput_mb_s": 88.18,
+        "tokens_per_sec": 22044369.6,
+        "allocation_volume_bytes": 1312,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 157,
+          "mode": "lenient"
+        }
+      },
+      "strict_lookup": {
+        "dimension": "dim_1_token_id_lookup",
+        "description": "Strict ID-to-token lookup with validation check",
+        "call_count": 157,
+        "p50_latency_ms": 0.008208,
+        "p95_latency_ms": 0.010624,
+        "throughput_mb_s": 76.51,
+        "tokens_per_sec": 19127680.3,
+        "allocation_volume_bytes": 1312,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 157,
+          "mode": "strict"
+        }
+      }
+    },
+    "dim_2_special_tokens": {
+      "special_token_handling": {
+        "dimension": "dim_2_special_tokens",
+        "description": "Decode sequences containing special control tokens",
+        "call_count": 56,
+        "p50_latency_ms": 0.008277,
+        "p95_latency_ms": 0.008453,
+        "throughput_mb_s": 8.7,
+        "tokens_per_sec": 6766008.9,
+        "allocation_volume_bytes": 113,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 56,
+          "special_tokens_count": 4
+        }
+      }
+    },
+    "dim_3_byte_fallback": {
+      "baseline_regex": {
+        "dimension": "dim_3_byte_fallback",
+        "description": "Baseline byte fallback with regex match on every token",
+        "call_count": 192,
+        "p50_latency_ms": 0.075975,
+        "p95_latency_ms": 0.079345,
+        "throughput_mb_s": 15.14,
+        "tokens_per_sec": 2527147.1,
+        "allocation_volume_bytes": 2300,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 192
+        }
+      },
+      "optimized_table": {
+        "dimension": "dim_3_byte_fallback",
+        "description": "Optimized byte fallback with precomputed dictionary lookup",
+        "call_count": 192,
+        "p50_latency_ms": 0.01839,
+        "p95_latency_ms": 0.026885,
+        "throughput_mb_s": 62.53,
+        "tokens_per_sec": 10440456.8,
+        "allocation_volume_bytes": 1150,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "token_count": 192
+        }
+      }
+    },
+    "dim_4_piece_metaspace": {
+      "baseline_char_loop": {
+        "dimension": "dim_4_piece_metaspace",
+        "description": "Baseline metaspace restore with character loop on clean text",
+        "call_count": 1020,
+        "p50_latency_ms": 0.053977,
+        "p95_latency_ms": 0.061443,
+        "throughput_mb_s": 18.9,
+        "tokens_per_sec": 18897054.3,
+        "allocation_volume_bytes": 8216,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "length": 1020
+        }
+      },
+      "optimized_fast_path": {
+        "dimension": "dim_4_piece_metaspace",
+        "description": "Optimized metaspace restore with prefix bypass check",
+        "call_count": 1,
+        "p50_latency_ms": 0.000113,
+        "p95_latency_ms": 0.000167,
+        "throughput_mb_s": 9000.0,
+        "tokens_per_sec": 9000000000.0,
+        "allocation_volume_bytes": 0,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "length": 1020
+        }
+      }
+    },
+    "dim_5_string_concatenation": {
+      "join_1000_segments": {
+        "dimension": "dim_5_string_concatenation",
+        "description": "Join 1,000 subword string pieces into single text",
+        "call_count": 1000,
+        "p50_latency_ms": 0.003,
+        "p95_latency_ms": 0.003198,
+        "throughput_mb_s": 5630.0,
+        "tokens_per_sec": 333333333.3,
+        "allocation_volume_bytes": 16931,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "segment_count": 1000,
+          "total_bytes": 16890
+        }
+      }
+    },
+    "dim_6_batch_scheduling": {
+      "batch_1": {
+        "dimension": "dim_6_batch_scheduling",
+        "description": "Batch decode scheduling (N=1)",
+        "call_count": 1,
+        "p50_latency_ms": 0.02474,
+        "p95_latency_ms": 0.02791,
+        "throughput_mb_s": 41.23,
+        "tokens_per_sec": 6345998.4,
+        "allocation_volume_bytes": 112,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 1,
+          "total_tokens": 157
+        }
+      },
+      "batch_8": {
+        "dimension": "dim_6_batch_scheduling",
+        "description": "Batch decode scheduling (N=8)",
+        "call_count": 8,
+        "p50_latency_ms": 0.19344,
+        "p95_latency_ms": 0.31416,
+        "throughput_mb_s": 42.18,
+        "tokens_per_sec": 6492969.4,
+        "allocation_volume_bytes": 504,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 8,
+          "total_tokens": 1256
+        }
+      },
+      "batch_32": {
+        "dimension": "dim_6_batch_scheduling",
+        "description": "Batch decode scheduling (N=32)",
+        "call_count": 32,
+        "p50_latency_ms": 0.78309,
+        "p95_latency_ms": 0.82977,
+        "throughput_mb_s": 41.68,
+        "tokens_per_sec": 6415610.0,
+        "allocation_volume_bytes": 1848,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 32,
+          "total_tokens": 5024
+        }
+      },
+      "batch_128": {
+        "dimension": "dim_6_batch_scheduling",
+        "description": "Batch decode scheduling (N=128)",
+        "call_count": 128,
+        "p50_latency_ms": 5.46084,
+        "p95_latency_ms": 5.95288,
+        "throughput_mb_s": 23.91,
+        "tokens_per_sec": 3680019.9,
+        "allocation_volume_bytes": 7224,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "batch_size": 128,
+          "total_tokens": 20096
+        }
+      }
+    },
+    "dim_7_streaming_vs_non_streaming": {
+      "non_streaming": {
+        "dimension": "dim_7_streaming_vs_non_streaming",
+        "description": "Non-streaming full-sequence decode",
+        "call_count": 1,
+        "p50_latency_ms": 0.026107,
+        "p95_latency_ms": 0.02625,
+        "throughput_mb_s": 39.07,
+        "tokens_per_sec": 6013789.6,
+        "allocation_volume_bytes": 1020,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "mode": "non_streaming",
+          "tokens": 157
+        }
+      },
+      "streaming": {
+        "dimension": "dim_7_streaming_vs_non_streaming",
+        "description": "Incremental streaming decode (token-by-token with deltas)",
+        "call_count": 157,
+        "p50_latency_ms": 0.146403,
+        "p95_latency_ms": 0.176367,
+        "throughput_mb_s": 6.97,
+        "tokens_per_sec": 1072380.0,
+        "allocation_volume_bytes": 2040,
+        "peak_memory_bytes": 0,
+        "detail": {
+          "mode": "streaming",
+          "tokens": 157
+        }
+      }
+    }
+  },
+  "benchmark_matrix": [
+    {
+      "workload": "short_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 12,
+      "text_bytes": 44,
+      "encode_p50_ms": 0.0487,
+      "decode_before_p50_ms": 0.0053,
+      "decode_before_p95_ms": 0.0065,
+      "decode_before_mb_s": 8.37,
+      "decode_after_p50_ms": 0.0032,
+      "decode_after_p95_ms": 0.0033,
+      "decode_after_mb_s": 13.66,
+      "decode_after_tokens_s": 3726708.1,
+      "speedup_pct": 63.35,
+      "ci_95_after_mb_s": [
+        13.49,
+        13.68
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "short_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 480,
+      "text_bytes": 1504,
+      "encode_p50_ms": 1.69,
+      "decode_before_p50_ms": 0.2156,
+      "decode_before_p95_ms": 0.2577,
+      "decode_before_mb_s": 6.98,
+      "decode_after_p50_ms": 0.123,
+      "decode_after_p95_ms": 0.1249,
+      "decode_after_mb_s": 12.22,
+      "decode_after_tokens_s": 3901170.4,
+      "speedup_pct": 75.21,
+      "ci_95_after_mb_s": [
+        12.13,
+        12.42
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "medium_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 157,
+      "text_bytes": 1020,
+      "encode_p50_ms": 0.6774,
+      "decode_before_p50_ms": 0.0909,
+      "decode_before_p95_ms": 0.0953,
+      "decode_before_mb_s": 11.22,
+      "decode_after_p50_ms": 0.0271,
+      "decode_after_p95_ms": 0.0564,
+      "decode_after_mb_s": 37.69,
+      "decode_after_tokens_s": 5801921.7,
+      "speedup_pct": 235.92,
+      "ci_95_after_mb_s": [
+        28.32,
+        38.05
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "medium_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 5120,
+      "text_bytes": 32736,
+      "encode_p50_ms": 20.4924,
+      "decode_before_p50_ms": 2.8226,
+      "decode_before_p95_ms": 2.8962,
+      "decode_before_mb_s": 11.6,
+      "decode_after_p50_ms": 0.8324,
+      "decode_after_p95_ms": 0.8772,
+      "decode_after_mb_s": 39.33,
+      "decode_after_tokens_s": 6150593.4,
+      "speedup_pct": 239.08,
+      "ci_95_after_mb_s": [
+        38.25,
+        40.3
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "long_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 661,
+      "text_bytes": 4730,
+      "encode_p50_ms": 3.3334,
+      "decode_before_p50_ms": 0.3869,
+      "decode_before_p95_ms": 0.7613,
+      "decode_before_mb_s": 12.23,
+      "decode_after_p50_ms": 0.1053,
+      "decode_after_p95_ms": 0.1234,
+      "decode_after_mb_s": 44.92,
+      "decode_after_tokens_s": 6277302.9,
+      "speedup_pct": 267.41,
+      "ci_95_after_mb_s": [
+        41.98,
+        45.0
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "long_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 21248,
+      "text_bytes": 151456,
+      "encode_p50_ms": 169.9727,
+      "decode_before_p50_ms": 22.2463,
+      "decode_before_p95_ms": 25.828,
+      "decode_before_mb_s": 6.81,
+      "decode_after_p50_ms": 7.1475,
+      "decode_after_p95_ms": 7.9208,
+      "decode_after_mb_s": 21.19,
+      "decode_after_tokens_s": 2972787.7,
+      "speedup_pct": 211.25,
+      "ci_95_after_mb_s": [
+        20.02,
+        22.99
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "multilingual_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 121,
+      "text_bytes": 792,
+      "encode_p50_ms": 17.209,
+      "decode_before_p50_ms": 0.1196,
+      "decode_before_p95_ms": 0.1237,
+      "decode_before_mb_s": 6.62,
+      "decode_after_p50_ms": 0.0389,
+      "decode_after_p95_ms": 0.0397,
+      "decode_after_mb_s": 20.36,
+      "decode_after_tokens_s": 3110539.8,
+      "speedup_pct": 207.35,
+      "ci_95_after_mb_s": [
+        20.16,
+        20.38
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "multilingual_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 3968,
+      "text_bytes": 25440,
+      "encode_p50_ms": 524.84,
+      "decode_before_p50_ms": 3.8887,
+      "decode_before_p95_ms": 4.1993,
+      "decode_before_mb_s": 6.54,
+      "decode_after_p50_ms": 1.2805,
+      "decode_after_p95_ms": 1.302,
+      "decode_after_mb_s": 19.87,
+      "decode_after_tokens_s": 3098886.3,
+      "speedup_pct": 203.7,
+      "ci_95_after_mb_s": [
+        19.76,
+        20.0
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "byte_fallback_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 137,
+      "text_bytes": 480,
+      "encode_p50_ms": 0.6451,
+      "decode_before_p50_ms": 0.0541,
+      "decode_before_p95_ms": 0.0735,
+      "decode_before_mb_s": 8.88,
+      "decode_after_p50_ms": 0.0524,
+      "decode_after_p95_ms": 0.0566,
+      "decode_after_mb_s": 9.16,
+      "decode_after_tokens_s": 2614503.8,
+      "speedup_pct": 3.17,
+      "ci_95_after_mb_s": [
+        10.51,
+        18.41
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "byte_fallback_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 4480,
+      "text_bytes": 15456,
+      "encode_p50_ms": 17.4607,
+      "decode_before_p50_ms": 2.6775,
+      "decode_before_p95_ms": 4.3889,
+      "decode_before_mb_s": 5.77,
+      "decode_after_p50_ms": 0.779,
+      "decode_after_p95_ms": 1.1239,
+      "decode_after_mb_s": 19.84,
+      "decode_after_tokens_s": 5750962.8,
+      "speedup_pct": 243.71,
+      "ci_95_after_mb_s": [
+        16.36,
+        20.25
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "source_code_single",
+      "mode": "single",
+      "batch_size": 1,
+      "token_count": 510,
+      "text_bytes": 1140,
+      "encode_p50_ms": 2.1707,
+      "decode_before_p50_ms": 0.1612,
+      "decode_before_p95_ms": 0.1852,
+      "decode_before_mb_s": 7.07,
+      "decode_after_p50_ms": 0.0655,
+      "decode_after_p95_ms": 0.0665,
+      "decode_after_mb_s": 17.4,
+      "decode_after_tokens_s": 7786259.5,
+      "speedup_pct": 146.14,
+      "ci_95_after_mb_s": [
+        17.28,
+        17.43
+      ],
+      "peak_rss_bytes": 0
+    },
+    {
+      "workload": "source_code_batch",
+      "mode": "batch",
+      "batch_size": 32,
+      "token_count": 16416,
+      "text_bytes": 36576,
+      "encode_p50_ms": 51.2954,
+      "decode_before_p50_ms": 5.9052,
+      "decode_before_p95_ms": 7.1203,
+      "decode_before_mb_s": 6.19,
+      "decode_after_p50_ms": 3.172,
+      "decode_after_p95_ms": 4.1145,
+      "decode_after_mb_s": 11.53,
+      "decode_after_tokens_s": 5175218.5,
+      "speedup_pct": 86.16,
+      "ci_95_after_mb_s": [
+        9.8,
+        14.44
+      ],
+      "peak_rss_bytes": 0
+    }
+  ]
+}

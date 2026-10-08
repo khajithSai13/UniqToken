@@ -259,6 +259,8 @@ class Normalizer:
 
     def restore_escaped_metaspace(self, text: str) -> str:
         """Restores literal metaspace and escape-prefix characters after decoding."""
+        if self._ESCAPE_PREFIX not in text:
+            return text
         restored: List[str] = []
         i = 0
         while i < len(text):
