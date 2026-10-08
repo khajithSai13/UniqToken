@@ -76,3 +76,34 @@ class PrefixTrie:
                 matches.append((curr_idx + 1, node.token, node.log_p))
 
         return matches
+
+    def memory_footprint(self) -> Dict[str, int]:
+        """Computes exact node counts and deep memory footprint of the prefix trie."""
+        import sys
+
+        total_nodes = 0
+        terminal_nodes = 0
+        total_bytes = sys.getsizeof(self)
+
+        stack = [self.root]
+        seen = {id(self.root)}
+        while stack:
+            node = stack.pop()
+            total_nodes += 1
+            if node.is_terminal:
+                terminal_nodes += 1
+            total_bytes += sys.getsizeof(node)
+            total_bytes += sys.getsizeof(node.children)
+            if node.token is not None:
+                total_bytes += sys.getsizeof(node.token)
+            for child in node.children.values():
+                child_id = id(child)
+                if child_id not in seen:
+                    seen.add(child_id)
+                    stack.append(child)
+
+        return {
+            "total_nodes": total_nodes,
+            "terminal_nodes": terminal_nodes,
+            "total_bytes": total_bytes,
+        }

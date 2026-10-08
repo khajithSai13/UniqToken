@@ -385,6 +385,42 @@ class UnigramModel:
         if "_cache_sig" in self.__dict__:
             del self.__dict__["_cache_sig"]
 
+    def memory_footprint(self) -> Dict[str, Any]:
+        """Returns detailed memory footprint metrics of the unigram model structures."""
+        import sys
+
+        vocab_bytes = sys.getsizeof(self.vocab) + sum(
+            sys.getsizeof(k) + sys.getsizeof(v) for k, v in self.vocab.items()
+        )
+        t2i_bytes = sys.getsizeof(self.token_to_id) + sum(
+            sys.getsizeof(k) + sys.getsizeof(v) for k, v in self.token_to_id.items()
+        )
+        i2t_bytes = sys.getsizeof(self.id_to_token)
+        if isinstance(self.id_to_token, dict):
+            i2t_bytes += sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in self.id_to_token.items())
+        elif isinstance(self.id_to_token, (list, tuple)):
+            i2t_bytes += sum(sys.getsizeof(v) for v in self.id_to_token)
+
+        trie = self._get_trie()
+        trie_stats = trie.memory_footprint()
+
+        seg_cache = self.__dict__.get("_seg_cache")
+        cache_bytes = sys.getsizeof(seg_cache) if seg_cache is not None else 0
+
+        total_model_bytes = vocab_bytes + t2i_bytes + i2t_bytes + trie_stats["total_bytes"] + cache_bytes
+
+        return {
+            "vocab_size": len(self.vocab),
+            "vocab_bytes": vocab_bytes,
+            "token_to_id_bytes": t2i_bytes,
+            "id_to_token_bytes": i2t_bytes,
+            "trie_bytes": trie_stats["total_bytes"],
+            "trie_nodes": trie_stats["total_nodes"],
+            "trie_terminals": trie_stats["terminal_nodes"],
+            "cache_bytes": cache_bytes,
+            "total_model_bytes": total_model_bytes,
+        }
+
     def _get_seg_cache(self) -> Dict[str, List[Tuple[str, int, int]]]:
         self._sync_cache()
         cache = self.__dict__.get("_seg_cache")

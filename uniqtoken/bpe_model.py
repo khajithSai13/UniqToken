@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import heapq
 import random
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .byte_codec import ByteFallbackEngine, validate_dropout_prob
 
@@ -205,3 +205,29 @@ class BPEModel:
                 continue  # lenient: unknown IDs contribute nothing
             tokens.append(tok)
         return ByteFallbackEngine.decode_tokens(tokens, space_char=space_char)
+
+    def memory_footprint(self) -> Dict[str, Any]:
+        """Returns detailed memory footprint metrics of the BPE model structures."""
+        import sys
+
+        vocab_bytes = sys.getsizeof(self.vocab) + sum(sys.getsizeof(v) for v in self.vocab)
+        t2i_bytes = sys.getsizeof(self.token_to_id) + sum(
+            sys.getsizeof(k) + sys.getsizeof(v) for k, v in self.token_to_id.items()
+        )
+        i2t_bytes = sys.getsizeof(self.id_to_token) + sum(
+            sys.getsizeof(k) + sys.getsizeof(v) for k, v in self.id_to_token.items()
+        )
+        merges_bytes = sys.getsizeof(self.merges) + sum(
+            sys.getsizeof(k) + sys.getsizeof(k[0]) + sys.getsizeof(k[1]) + sys.getsizeof(v)
+            for k, v in self.merges.items()
+        )
+        total_bytes = vocab_bytes + t2i_bytes + i2t_bytes + merges_bytes
+        return {
+            "vocab_size": len(self.vocab),
+            "vocab_bytes": vocab_bytes,
+            "token_to_id_bytes": t2i_bytes,
+            "id_to_token_bytes": i2t_bytes,
+            "merges_bytes": merges_bytes,
+            "merges_count": len(self.merges),
+            "total_model_bytes": total_bytes,
+        }
