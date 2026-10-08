@@ -54,9 +54,7 @@ class CanonicalBenchmarkTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             corpus = ["The quick brown fox jumps over 42 lazy dogs."] * 5
-            tok = CustomTokenizer.train_from_corpus(
-                corpus, target_vocab_size=320, min_frequency=1, verbose=False
-            )
+            tok = CustomTokenizer.train_from_corpus(corpus, target_vocab_size=320, min_frequency=1, verbose=False)
             model_path = Path(tmp) / "uniqtoken_model"
             tok.save(model_path)
             run_parity_gate(model_path)
