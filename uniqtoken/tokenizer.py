@@ -1201,8 +1201,8 @@ class CustomTokenizer:
     def _indent_compression_enabled(self) -> bool:
         return any(tok in self.model.special_tokens for tok in IndentationCompressor.INDENT_SPECIAL_TOKENS)
 
-    def decode(self, token_ids: List[int]) -> str:
-        decoded = self.model.decode(token_ids, space_char=self.normalizer.space_char)
+    def decode(self, token_ids: List[int], strict: bool = False) -> str:
+        decoded = self.model.decode(token_ids, space_char=self.normalizer.space_char, strict=strict)
         if self._indent_compression_enabled:
             decoded = IndentationCompressor.decompress_indents(decoded)
         return self.normalizer.restore_escaped_metaspace(decoded)
@@ -1231,12 +1231,12 @@ class CustomTokenizer:
         if num_workers is not None and num_workers < 1:
             raise ValueError(f"num_workers must be >= 1 (or None), got {num_workers}")
         if len(token_id_sequences) <= 64 or num_workers == 1:
-            return [self.decode(list(seq)) for seq in token_id_sequences]
+            return [self.decode(seq if isinstance(seq, list) else list(seq)) for seq in token_id_sequences]
         workers = num_workers or min(os.cpu_count() or 1, 8)
         with ThreadPoolExecutor(max_workers=workers) as executor:
             return list(
                 executor.map(
-                    lambda seq: self.decode(list(seq)),
+                    lambda seq: self.decode(seq if isinstance(seq, list) else list(seq)),
                     token_id_sequences,
                 )
             )

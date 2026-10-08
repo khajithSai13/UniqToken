@@ -591,10 +591,18 @@ class UnigramModel:
         tokens = self.sample(text, alpha=alpha)
         return [self.token_to_id[t] for t in tokens]
 
-    def decode(self, token_ids: List[int], space_char: str = "\u2581") -> str:
-        from .byte_codec import ByteFallbackEngine
-
-        tokens = [self.id_to_token.get(i, self.unk_token) for i in token_ids]
+    def decode(self, token_ids: List[int], space_char: str = "\u2581", strict: bool = False) -> str:
+        id_to_token = self.id_to_token
+        unk = self.unk_token
+        if strict:
+            tokens: List[str] = []
+            for i in token_ids:
+                tok = id_to_token.get(i)
+                if tok is None:
+                    raise ValueError(f"token id {i} is not in the model vocabulary")
+                tokens.append(tok)
+        else:
+            tokens = [id_to_token.get(i, unk) for i in token_ids]
         return ByteFallbackEngine.decode_tokens(tokens, space_char=space_char)
 
 

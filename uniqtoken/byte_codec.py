@@ -17,6 +17,11 @@ def validate_dropout_prob(dropout_prob: float) -> None:
         raise ValueError(f"dropout_prob must be in range [0.0, 1.0), got {dropout_prob!r}")
 
 
+BYTE_TOKEN_TO_VAL: dict[str, int] = {f"<0x{b:02X}>": b for b in range(256)}
+BYTE_TOKEN_TO_VAL.update({f"<0x{b:02x}>": b for b in range(256)})
+BYTE_VAL_TO_TOKEN: tuple[str, ...] = tuple(f"<0x{b:02X}>" for b in range(256))
+
+
 class ByteFallbackEngine:
     """
     Executable Byte-Fallback codec.
@@ -30,23 +35,22 @@ class ByteFallbackEngine:
 
     @classmethod
     def is_byte_token(cls, token: str) -> bool:
-        # ponytail: fast string pre-check avoids regex for 99% non-byte tokens; upgrade to interned set if vocab>100k
         if len(token) != 6 or not token.startswith("<0x") or token[-1] != ">":
             return False
-        return bool(cls.BYTE_TOKEN_PATTERN.match(token))
+        return token in BYTE_TOKEN_TO_VAL
 
     @classmethod
     def byte_to_token(cls, byte_val: int) -> str:
         if not 0 <= byte_val <= 255:
             raise ValueError(f"Byte value must be in range 0-255, got {byte_val}")
-        return f"<0x{byte_val:02X}>"
+        return BYTE_VAL_TO_TOKEN[byte_val]
 
     @classmethod
     def token_to_byte(cls, token: str) -> int:
-        match = cls.BYTE_TOKEN_PATTERN.match(token)
-        if not match:
+        byte_val = BYTE_TOKEN_TO_VAL.get(token)
+        if byte_val is None:
             raise ValueError(f"Token {token!r} is not a valid byte fallback token")
-        return int(match.group(1), 16)
+        return byte_val
 
     @classmethod
     def char_to_byte_tokens(cls, char_or_str: str) -> List[str]:
@@ -65,7 +69,8 @@ class ByteFallbackEngine:
             raw_bytes = char_or_str.encode("utf-8", errors="surrogateescape")
         except UnicodeEncodeError as exc:
             raise ValueError("input contains an unpaired surrogate outside the surrogateescape byte range") from exc
-        return [cls.byte_to_token(b) for b in raw_bytes]
+        byte_to_tok = BYTE_VAL_TO_TOKEN
+        return [byte_to_tok[b] for b in raw_bytes]
 
     @classmethod
     def decode_tokens(cls, tokens: List[str], space_char: str = "\u2581") -> str:
@@ -78,19 +83,21 @@ class ByteFallbackEngine:
         """
         output_segments: List[str] = []
         byte_buffer = bytearray()
-
-        def flush_bytes():
-            if byte_buffer:
-                output_segments.append(byte_buffer.decode("utf-8"))
-                byte_buffer.clear()
+        token_to_val = BYTE_TOKEN_TO_VAL
 
         for tok in tokens:
-            if cls.is_byte_token(tok):
-                byte_val = cls.token_to_byte(tok)
-                byte_buffer.append(byte_val)
+            if len(tok) == 6 and tok.startswith("<0x") and tok.endswith(">") and tok in token_to_val:
+                byte_buffer.append(token_to_val[tok])
             else:
-                flush_bytes()
-                output_segments.append(tok.replace(space_char, " "))
+                if byte_buffer:
+                    output_segments.append(byte_buffer.decode("utf-8"))
+                    byte_buffer.clear()
+                if space_char in tok:
+                    output_segments.append(tok.replace(space_char, " "))
+                else:
+                    output_segments.append(tok)
 
-        flush_bytes()
+        if byte_buffer:
+            output_segments.append(byte_buffer.decode("utf-8"))
+
         return "".join(output_segments)
