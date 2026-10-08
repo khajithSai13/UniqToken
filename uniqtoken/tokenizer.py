@@ -1467,7 +1467,7 @@ class CustomTokenizer:
         else:
             footprint["model"] = {"total_model_bytes": sys.getsizeof(self.model)}
 
-        footprint["special_tokens_count"] = len(self.special_tokens) if hasattr(self, "special_tokens") else 0
+        footprint["special_tokens_count"] = len(self.model.special_tokens)
         model_bytes = footprint["model"].get("total_model_bytes", 0)
         footprint["total_bytes"] = model_bytes + sys.getsizeof(self)
         return footprint
