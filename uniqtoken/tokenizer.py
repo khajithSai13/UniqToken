@@ -1453,3 +1453,21 @@ class CustomTokenizer:
         from .hf_exporter import HuggingFaceExporter
 
         return HuggingFaceExporter.export_to_gguf(self, output_path=output_path, model_name=model_name)
+
+    def memory_footprint(self) -> Dict[str, Any]:
+        """Computes memory footprint of the loaded tokenizer components."""
+        import sys
+
+        footprint: Dict[str, Any] = {
+            "tokenizer_type": type(self.model).__name__,
+            "vocab_size": len(self.model.vocab) if hasattr(self.model, "vocab") else 0,
+        }
+        if hasattr(self.model, "memory_footprint"):
+            footprint["model"] = self.model.memory_footprint()
+        else:
+            footprint["model"] = {"total_model_bytes": sys.getsizeof(self.model)}
+
+        footprint["special_tokens_count"] = len(self.special_tokens) if hasattr(self, "special_tokens") else 0
+        model_bytes = footprint["model"].get("total_model_bytes", 0)
+        footprint["total_bytes"] = model_bytes + sys.getsizeof(self)
+        return footprint
